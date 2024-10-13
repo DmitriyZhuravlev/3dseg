@@ -21,7 +21,7 @@ class cv_colors(Enum):
     BLACK = (0, 0, 0)
 
 debug = True
-use_slick = False
+use_slick = True#False
 show_warp = True
 resize_shape = (1600, 900)
 screen_width, screen_height = 1920 // 2, 1080 // 2
@@ -413,6 +413,14 @@ def main(video_path, draw_boundaries=True, debug=False):
                 ys, xs = np.where(component_mask)
                 x_min, x_max = np.min(xs), np.max(xs)
                 y_min, y_max = np.min(ys), np.max(ys)
+
+                # Define the extreme points of the blob (top-most, bottom-most, left-most, right-most)
+                top_point = (xs[np.argmin(ys)], y_min)  # Top-most point
+                bottom_point = (xs[np.argmax(ys)], y_max)  # Bottom-most point
+                left_point = (x_min, ys[np.argmin(xs)])  # Left-most point
+                right_point = (x_max, ys[np.argmax(xs)])  # Right-most point
+                
+                extreme_points = [top_point, bottom_point, left_point, right_point]
                 
                 # Check if the bounding box is within the ROI
                 if True: #x_min >= x_min_roi and x_max <= x_max_roi and y_min >= y_min_roi and y_max <= y_max_roi:
@@ -423,27 +431,35 @@ def main(video_path, draw_boundaries=True, debug=False):
                     # Extract the flow vectors inside the box
                     flow_in_box = flow[component_mask > 0]  # Flow vectors within the box
                     avg_flow_vector = np.mean(flow_in_box, axis=0)
-    
+                    
                     if np.linalg.norm(avg_flow_vector) > 2.0:
+                        scale = 1#0
                         start_point_img = np.array([x_max, y_max], dtype=np.float32)
-                        end_point_img = np.array([x_max + avg_flow_vector[0], y_max + avg_flow_vector[1]], dtype=np.float32)
-    
+                        end_point_img = np.array([x_max + scale * avg_flow_vector[0], y_max + scale * avg_flow_vector[1]], dtype=np.float32)
+                        cv2.arrowedLine(bounding_box_image, start_point_img.astype(int), end_point_img.astype(int), cv_colors.RED.value, 2)
+        
                         start_point_bev = map_box_to_BEV([start_point_img], ipm_matrix)[0]  # Ensure map_box_to_BEV is implemented
                         end_point_bev = map_box_to_BEV([end_point_img], ipm_matrix)[0]
-    
+        
                         avg_flow_vector_bev = end_point_bev - start_point_bev
                         avg_flow_angle = np.arctan2(avg_flow_vector_bev[1], avg_flow_vector_bev[0])
-    
+        
                         print(f"Box: Average flow angle (radians): {avg_flow_angle}")
                         print(f"Box: Average flow angle (degrees): {np.degrees(avg_flow_angle)}")
-    
-                        # Compute previous box corners based on flow
-                        prev_box_corners = []
-                        for (x, y) in box_corners:
-                            flow_at_point = flow[int(y), int(x)]
-                            prev_x = x - flow_at_point[0]
+                        
+                        # Compute previous positions of extreme points using the flow
+                        prev_extreme_points = []
+                        for (x, y) in extreme_points:
+                            flow_at_point = flow[int(y), int(x)]  # Get the flow vector at the extreme point
+                            prev_x = x - flow_at_point[0]  # Backtrack using the flow
                             prev_y = y - flow_at_point[1]
-                            prev_box_corners.append((prev_x, prev_y))
+                            prev_extreme_points.append((prev_x, prev_y))
+                            
+                        prev_x_min, prev_x_max = np.min([p[0] for p in prev_extreme_points]), np.max([p[0] for p in prev_extreme_points])
+                        prev_y_min, prev_y_max = np.min([p[1] for p in prev_extreme_points]), np.max([p[1] for p in prev_extreme_points])
+        
+                        prev_box_corners = [(prev_x_min, prev_y_max), (prev_x_min, prev_y_min), (prev_x_max, prev_y_min), (prev_x_max, prev_y_max)]
+                        cv2.rectangle(bounding_box_image, (int(prev_x_min), int(prev_y_min)), (int(prev_x_max), int(prev_y_max)), cv_colors.PURPLE.value, 2)
     
                         # Compute angles
                         bev_points = map_box_to_BEV(box_corners, ipm_matrix)
@@ -487,7 +503,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame, algorithm=cv2.ximgproc.MSLIC,
                                                  region_size=region_size, ruler=ruler)
-        slic.iterate(1) #10)
+        slic.iterate(10)
         labels = slic.getLabels() + 1
 
         colored_segments = color_segments(next_frame, labels)
@@ -508,6 +524,14 @@ def main(video_path, draw_boundaries=True, debug=False):
                 ys, xs = np.where(mask)
                 x_min, x_max = np.min(xs), np.max(xs)
                 y_min, y_max = np.min(ys), np.max(ys)
+
+                # Define the extreme points of the blob (top-most, bottom-most, left-most, right-most)
+                top_point = (xs[np.argmin(ys)], y_min)  # Top-most point
+                bottom_point = (xs[np.argmax(ys)], y_max)  # Bottom-most point
+                left_point = (x_min, ys[np.argmin(xs)])  # Left-most point
+                right_point = (x_max, ys[np.argmax(xs)])  # Right-most point
+                
+                extreme_points = [top_point, bottom_point, left_point, right_point]
                  # Check if the bounding box is within the ROI
                 if x_min >= x_min_roi and x_max <= x_max_roi and y_min >= y_min_roi and y_max <= y_max_roi:
                     # TODO return np.array([[min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y]], dtype="float64")
@@ -544,12 +568,23 @@ def main(video_path, draw_boundaries=True, debug=False):
                         print(f"Box {label}: Average flow angle (degrees): {avg_flow_angle_degrees}")
     
                         # Find the predicted box position in the previous frame using the flow field
-                        prev_box_corners = []
-                        for (x, y) in box_corners:
-                            flow_at_point = flow[int(y), int(x)]  # Get the flow vector at (x, y)
+                        # prev_box_corners = []
+                        # for (x, y) in box_corners:
+                            # flow_at_point = flow[int(y), int(x)]  # Get the flow vector at (x, y)
+                            # prev_x = x - flow_at_point[0]  # Backtrack using the flow
+                            # prev_y = y - flow_at_point[1]
+                            # prev_box_corners.append((prev_x, prev_y))
+                            
+                        prev_extreme_points = []
+                        for (x, y) in extreme_points:
+                            flow_at_point = flow[int(y), int(x)]  # Get the flow vector at the extreme point
                             prev_x = x - flow_at_point[0]  # Backtrack using the flow
                             prev_y = y - flow_at_point[1]
-                            prev_box_corners.append((prev_x, prev_y))
+                            prev_extreme_points.append((prev_x, prev_y))
+                            
+                        prev_x_min, prev_x_max = np.min([p[0] for p in prev_extreme_points]), np.max([p[0] for p in prev_extreme_points])
+                        prev_y_min, prev_y_max = np.min([p[1] for p in prev_extreme_points]), np.max([p[1] for p in prev_extreme_points])
+                        prev_box_corners = [(prev_x_min, prev_y_max), (prev_x_min, prev_y_min), (prev_x_max, prev_y_min), (prev_x_max, prev_y_max)]
     
     
                         bev_points = map_box_to_BEV(box_corners, ipm_matrix)

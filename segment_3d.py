@@ -6,7 +6,7 @@ from lifting import *
 from enum import Enum
 
 # Initialize video capture and output
-input_video_path = '/home/dmytrozhuravlov/cv/data/bike.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/Leeds.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 
@@ -23,12 +23,12 @@ class cv_colors(Enum):
 
 
 debug = True
-use_slick = False
-show_warp = False  #True
+use_slick = True #False
+show_warp = True
 resize_shape = (1600, 900)
 screen_width, screen_height = 1920 // 2, 1080 // 2
 roi_corners = None
-min_square = 10000
+min_square = 100
 
 
 def unwarp(img, roi_corners):
@@ -73,24 +73,87 @@ def select_points(image):
     return np.array(points, dtype=np.float32)
 
 
+# def generate_perspective_matrix(img, roi_corners):
+# src = np.float32(roi_corners)
+# top_padding, left_padding = 1000000, 0
+# warped_size = (img.shape[1] + 2 * left_padding, img.shape[0] + top_padding)
+# offset = int((warped_size[0] - 2 * left_padding) / 3.0)
+
+# dst = np.float32([[offset + left_padding, warped_size[1]],
+# [offset + left_padding, top_padding],
+# [warped_size[0] - offset - left_padding, top_padding],
+# [warped_size[0] - offset - left_padding,
+# warped_size[1]]])
+
+# persp = cv2.getPerspectiveTransform(src, dst)
+# inv = cv2.getPerspectiveTransform(dst, src)
+# return persp, inv, warped_size
+
+# def generate_perspective_matrix(img, roi_corners, scale_factor=1.0):
+# # Convert ROI corners to np.float32
+# src = np.float32(roi_corners)
+
+# # Calculate bounding box dimensions of the ROI
+# src_width = np.linalg.norm(src[0] - src[3])  # Bottom-left to bottom-right
+# src_height = np.linalg.norm(src[0] - src[1])  # Bottom-left to top-left
+
+# # Scale the source ROI if needed
+# center_x, center_y = np.mean(src, axis=0)  # Center of the ROI
+# scaled_src = []
+
+# for corner in src:
+# scaled_corner = [
+# center_x + scale_factor * (corner[0] - center_x),
+# center_y + scale_factor * (corner[1] - center_y)
+# ]
+# scaled_src.append(scaled_corner)
+
+# # Update source points with scaled values
+# scaled_src = np.float32(scaled_src)
+
+# # Calculate destination size for the whole image with the ROI centered and at the bottom
+# bev_image_height = img.shape[0]
+# bev_image_width = img.shape[1]//5
+
+# # Calculate destination rectangle size for the ROI
+# dst_width = bev_image_width * 0.001  # Map the ROI to 80% of the image width
+# dst_height = bev_image_height * 0.0001  # Map the ROI to 40% of the image height
+
+# # Center the destination rectangle horizontally and place it at the bottom
+# left_padding = (bev_image_width - dst_width) // 2
+# bottom_padding = bev_image_height - dst_height - 10  # 10px from the bottom
+
+# # Define destination points for the BEV (where the ROI should map to)
+# dst = np.float32([
+# [left_padding, bev_image_height],                            # Bottom-left
+# [left_padding, bottom_padding],                              # Top-left
+# [left_padding + dst_width, bottom_padding],                  # Top-right
+# [left_padding + dst_width, bev_image_height]                 # Bottom-right
+# ])
+
+# # Compute perspective transform matrix (this transforms the entire image, not just the ROI)
+# persp = cv2.getPerspectiveTransform(scaled_src, dst)
+# inv = cv2.getPerspectiveTransform(dst, scaled_src)
+
+# return persp, inv, (bev_image_width, bev_image_height)
+
+
 def generate_perspective_matrix(img, roi_corners):
-    src = np.float32(roi_corners)
-    top_padding, left_padding = 1000000, 0
-    warped_size = (img.shape[1] + 2 * left_padding, img.shape[0] + top_padding)
-    offset = int((warped_size[0] - 2 * left_padding) / 3.0)
+    pst2 = np.float32([[-36., -290.], [1154., 420.], [400., 918.],
+                       [600., 948.]])
+    pst1 = np.float32([[0., 0.], [960., 0.], [0., 540.], [960., 540.]])
 
-    dst = np.float32([[offset + left_padding, warped_size[1]],
-                      [offset + left_padding, top_padding],
-                      [warped_size[0] - offset - left_padding, top_padding],
-                      [warped_size[0] - offset - left_padding,
-                       warped_size[1]]])
+    persp = cv2.getPerspectiveTransform(pst1, pst2)
+    inv = cv2.getPerspectiveTransform(pst2, pst1)
 
-    persp = cv2.getPerspectiveTransform(src, dst)
-    inv = cv2.getPerspectiveTransform(dst, src)
-    return persp, inv, warped_size
+    bev_image_height = 1028
+    bev_image_width = 1048
+
+    return persp, inv, (bev_image_width, bev_image_height)
 
 
 def crop_warp(warped):
+    return warped
     top_padding, left_padding = 1000000, 0
     warped_size = (warped.shape[1], warped.shape[0])
     offset = 0
@@ -309,13 +372,32 @@ def draw_cube(image,
                   color=color,
                   thickness=thickness)
     # Draw the upper face (as a quadrilateral)
-    cv2.polylines(image, [upper_face], isClosed=True, color=color, thickness=thickness)
+    cv2.polylines(image, [upper_face],
+                  isClosed=True,
+                  color=color,
+                  thickness=thickness)
 
     # Draw the vertical line between the lower and upper vertex
-    cv2.line(image, lower_face[0], upper_face[2], color=color, thickness=thickness)
-    cv2.line(image, lower_face[1], upper_face[1], color=color, thickness=thickness)
-    cv2.line(image, lower_face[2], upper_face[0], color=color, thickness=thickness)
-    cv2.line(image, lower_face[3], upper_face[3], color=color, thickness=thickness)
+    cv2.line(image,
+             lower_face[0],
+             upper_face[2],
+             color=color,
+             thickness=thickness)
+    cv2.line(image,
+             lower_face[1],
+             upper_face[1],
+             color=color,
+             thickness=thickness)
+    cv2.line(image,
+             lower_face[2],
+             upper_face[0],
+             color=color,
+             thickness=thickness)
+    cv2.line(image,
+             lower_face[3],
+             upper_face[3],
+             color=color,
+             thickness=thickness)
 
 
 # def draw_cube(image, bottom, top, camera, color=(0, 0, 255), thickness=1):
@@ -343,7 +425,7 @@ def draw_cube(image,
 # return image
 
 
-def draw_bounding_box_for_blob(image, flow, component, flow_threshold=1.0):
+def draw_bounding_box_for_blob(image, flow, component, flow_threshold=2.0):
     """Draw a single bounding box around the entire moving blob and its average flow direction."""
 
     if np.any(component):
@@ -405,7 +487,7 @@ def main(video_path, draw_boundaries=True, debug=False):
     ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(
         avg_frame, roi_corners)
 
-    region_size = 300  #10#30
+    region_size = 40  #10#30
     ruler = 30
 
     #bev_image = np.zeros((screen_height, screen_width, 3), dtype=np.uint8)
@@ -428,7 +510,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         blurred_diff = cv2.GaussianBlur(gray_diff, (5, 5), 0)
 
         # Threshold the blurred difference image to create a binary mask for moving pixels
-        _, moving_mask = cv2.threshold(blurred_diff, 60, 255,
+        _, moving_mask = cv2.threshold(blurred_diff, 30, 255,
                                        cv2.THRESH_BINARY)
 
         cv2.imshow('Moving Mask',
@@ -472,8 +554,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                 # Check if the bounding box is within the ROI
                 if True:  #x_min >= x_min_roi and x_max <= x_max_roi and y_min >= y_min_roi and y_max <= y_max_roi:
                     #TODO crop to roi
-                    box_corners = [[x_min, y_max], [x_min, y_min_roi],
-                                   [x_max, y_min_roi], [x_max, y_max]]
+                    box_corners = [[x_min, y_max], [x_min, y_min],
+                                   [x_max, y_min], [x_max, y_max]]
 
                     # Extract the flow vectors inside the box
                     flow_in_box = flow[component_mask
@@ -498,6 +580,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                             [start_point_img], ipm_matrix)[
                                 0]  # Ensure map_box_to_BEV is implemented
                         end_point_bev = map_box_to_BEV([end_point_img],
+                                                       ipm_matrix)[0]
+                        grd_point_bev = map_box_to_BEV([[x_min, y_max]],
                                                        ipm_matrix)[0]
 
                         avg_flow_vector_bev = end_point_bev - start_point_bev
@@ -542,6 +626,8 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                         # Compute angles
                         bev_points = map_box_to_BEV(box_corners, ipm_matrix)
+                        bev_image = draw_quadrangles_in_BEV(
+                            bev_image, bev_points)
                         bev_points1 = map_box_to_BEV(prev_box_corners,
                                                      ipm_matrix)
 
@@ -554,62 +640,111 @@ def main(video_path, draw_boundaries=True, debug=False):
                         d1, alpha1, beta1 = compute_angles(
                             bev_points1_iv, debug
                         )  # Ensure compute_upper_angles is implemented
-
+                        # in math
                         angle_radians = move_to_second_quadrant(
                             -avg_flow_angle_bev
                         )  # Ensure move_to_second_quadrant is implemented
-                        x, y = calculate_solution(np.pi - angle_radians, alpha,
-                                                  beta, d,
-                                                  np.pi - angle_radians,
-                                                  alpha1, beta1, d1, debug)
+
+                        phi = compute_internal_angle(
+                            [np.cos(-angle_radians),
+                             np.sin(-angle_radians)],
+                            grd_point_bev - start_point_bev,
+                            debug=debug)
+                        print(f"Phi angle (degrees): {np.degrees(phi)}")
+                        assert phi > 0
+                        assert phi < np.pi/2
+                        phi_prev = compute_internal_angle(
+                            [np.cos(-angle_radians),
+                             np.sin(-angle_radians)],
+                            map_box_to_BEV([(prev_x_min, prev_y_max)],
+                                           ipm_matrix)[0] -
+                            map_box_to_BEV([(prev_x_max, prev_y_max)],
+                                           ipm_matrix)[0],
+                            debug=debug)
+                        print(
+                            f"Phi prev angle (degrees): {np.degrees(phi_prev)}"
+                        )
+                        assert phi_prev > 0
+                        assert phi_prev < np.pi/2
+                        print(
+                            f"Phi est (degrees): {np.degrees(np.pi - angle_radians)}"
+                        )
+
+                        scale = 30
+                        cv2.arrowedLine(bev_image, start_point_bev.astype(int),
+                                        (int(start_point_bev[0] +
+                                             scale * np.cos(-angle_radians)),
+                                         int(start_point_bev[1] +
+                                             scale * np.sin(-angle_radians))),
+                                        cv_colors.YELLOW.value, 2)
+                        cv2.arrowedLine(
+                            bev_image, start_point_bev.astype(int),
+                            (int(start_point_bev[0] +
+                                 scale * np.cos(avg_flow_angle_bev)),
+                             int(start_point_bev[1] +
+                                 scale * np.sin(avg_flow_angle_bev))),
+                            cv_colors.RED.value, 2)
+
+                        x, y = calculate_solution(phi, alpha, beta, d,
+                                                  phi_prev, alpha1, beta1, d1,
+                                                  debug)
 
                         if x is not None and y is not None:
                             bottom_iv = compute_bottom_rectangle(
-                                bev_points_iv, np.pi + angle_radians, x, y,
-                                debug
+                                bev_points_iv, angle_radians, x, y, debug
                             )  # Ensure compute_bottom_rectangle is implemented
                             bottom = to_iv(bottom_iv)
                             center = bottom[0]
                             bottom = bottom[1:]
                             lower_face = map_box_to_BEV(bottom, inv_mat)
-                            #lower_face_iv = to_iv(lower_face)
-                            draw_bottom(bounding_box_image,
-                                        lower_face.astype("int"),
-                                        color=cv_colors.MINT.value,
-                                        thickness=3)
-                            #continue
-                            d, alpha, beta = compute_upper_angles(
-                                bev_points_iv,
-                                debug)  # Ensure compute_angles is implemented
-                            d1, alpha1, beta1 = compute_upper_angles(
-                                bev_points1_iv, debug
-                            )  # Ensure compute_upper_angles is implemented
-                            # TODO use upper angles
-                            x_up, y_up = calculate_solution(
-                                -np.pi / 2 - angle_radians, alpha1, beta1, d1,
-                                -np.pi / 2 - angle_radians, alpha1, beta1, d1,
-                                debug)
-                            if x_up is not None and y_up is not None:
 
-                                top_iv = compute_top_rectangle(
-                                    bev_points_iv, -np.pi / 2 - angle_radians,
-                                    x_up, y_up, debug
-                                )  # Ensure compute_top_rectangle is implemented
-                                if bottom is not None and top_iv is not None:
-                                    top = to_iv(top_iv)
-                                    center_top = top[0]
-                                    #bottom = camera.convert_bev_to_world(bottom)
-                                    #det.centers = [[bottom[0], det.angle_radians]]
+                            # Check if all points in lower_face and upper_face are within the bounding box
+                            e = 5
+                            if np.all((lower_face[:, 0] + e >= x_min)
+                                              & (lower_face[:, 0] <= x_max + e)
+                                              & (lower_face[:, 1] + e >= y_min)
+                                              & (lower_face[:,
+                                                            1] <= y_max + e)):
+                                #lower_face_iv = to_iv(lower_face)
+                                draw_bottom(bounding_box_image,
+                                            lower_face.astype("int"),
+                                            color=cv_colors.MINT.value,
+                                            thickness=4)
+                                #continue
+                                d, alpha, beta = compute_upper_angles(
+                                    bev_points_iv, debug
+                                )  # Ensure compute_angles is implemented
+                                d1, alpha1, beta1 = compute_upper_angles(
+                                    bev_points1_iv, debug
+                                )  # Ensure compute_upper_angles is implemented
+                                # TODO use upper angles
+                                x_up, y_up = calculate_solution(
+                                    -np.pi / 2 - angle_radians, alpha1, beta1,
+                                    d1, -np.pi / 2 - angle_radians, alpha1,
+                                    beta1, d1, debug)
+                                if x_up is not None and y_up is not None:
 
-                                    top = top[1:]
+                                    top_iv = compute_top_rectangle(
+                                        bev_points_iv,
+                                        -np.pi / 2 + angle_radians, x_up, y_up,
+                                        debug
+                                    )  # Ensure compute_top_rectangle is implemented
+                                    if bottom is not None and top_iv is not None:
+                                        top = to_iv(top_iv)
+                                        center_top = top[0]
+                                        #bottom = camera.convert_bev_to_world(bottom)
+                                        #det.centers = [[bottom[0], det.angle_radians]]
 
-                                    upper_face = map_box_to_BEV(top, inv_mat)
+                                        top = top[1:]
 
-                                    draw_cube(bounding_box_image,
-                                              lower_face.astype("int"),
-                                              upper_face.astype("int"),
-                                              color=cv_colors.ORANGE.value,
-                                              thickness=3)
+                                        upper_face = map_box_to_BEV(
+                                            top, inv_mat)
+
+                                        draw_cube(bounding_box_image,
+                                                  lower_face.astype("int"),
+                                                  upper_face.astype("int"),
+                                                  color=cv_colors.ORANGE.value,
+                                                  thickness=2)
 
             resized_image = resize_to_match_height(
                 bounding_box_image,
@@ -627,6 +762,10 @@ def main(video_path, draw_boundaries=True, debug=False):
             if cv2.waitKey(30) & 0xFF == 27:  # Esc key to stop
                 break
             continue
+
+
+
+
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                  algorithm=cv2.ximgproc.MSLIC,
@@ -671,7 +810,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                     top_point, bottom_point, left_point, right_point
                 ]
                 # Check if the bounding box is within the ROI
-                if x_min >= x_min_roi and x_max <= x_max_roi and y_min >= y_min_roi and y_max <= y_max_roi:
+                if True: #x_min >= x_min_roi and x_max <= x_max_roi and y_min >= y_min_roi and y_max <= y_max_roi:
                     # TODO return np.array([[min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y]], dtype="float64")
                     box_corners = [
                         [x_min, y_max], [x_min, y_min], [x_max, y_min],
@@ -755,61 +894,114 @@ def main(video_path, draw_boundaries=True, debug=False):
                         bev_points1 = map_box_to_BEV(prev_box_corners,
                                                      ipm_matrix)
 
-                        d, alpha, beta = compute_angles(bev_points, debug)
-                        d1, alpha1, beta1 = compute_upper_angles(
-                            bev_points1, debug)
+                        bev_points_iv = to_iv(bev_points)
+                        bev_points1_iv = to_iv(bev_points1)
 
-                        angle_radians = move_to_second_quadrant(avg_flow_angle)
+                        d, alpha, beta = compute_angles(bev_points_iv, debug)
+                        d1, alpha1, beta1 = compute_angles(
+                            bev_points1_iv, debug)
 
-                        x, y = calculate_solution(np.pi - angle_radians, alpha,
+                        angle_radians = move_to_second_quadrant(-avg_flow_angle)
+
+                        grd_point_bev = map_box_to_BEV([[x_min, y_max]],
+                                                       ipm_matrix)[0]
+                        phi = compute_internal_angle(
+                            [np.cos(-angle_radians),
+                             np.sin(-angle_radians)],
+                            grd_point_bev - start_point_bev,
+                            debug=debug)
+                        print(f"Phi angle (degrees): {np.degrees(phi)}")
+                        assert phi > 0
+                        assert phi < np.pi/2
+                        phi_prev = compute_internal_angle(
+                            [np.cos(-angle_radians),
+                             np.sin(-angle_radians)],
+                            map_box_to_BEV([(prev_x_min, prev_y_max)],
+                                           ipm_matrix)[0] -
+                            map_box_to_BEV([(prev_x_max, prev_y_max)],
+                                           ipm_matrix)[0],
+                            debug=debug)
+                        print(
+                            f"Phi prev angle (degrees): {np.degrees(phi_prev)}"
+                        )
+                        assert phi_prev > 0
+                        assert phi_prev < np.pi/2
+                        print(
+                            f"Phi est (degrees): {np.degrees(np.pi - angle_radians)}"
+                        )
+
+                        x, y = calculate_solution(phi, alpha,
                                                   beta, d,
-                                                  np.pi - angle_radians,
+                                                  phi_prev,
                                                   alpha1, beta1, d1, debug)
                         if x is not None and y is not None:
-                            x_up, y_up = calculate_solution(
-                                -np.pi / 2 + angle_radians, alpha1, beta1, d1,
-                                -np.pi / 2 + angle_radians, alpha1, beta1, d1,
-                                debug)
-                            if x_up is not None and y_up is not None:
-                                if x_up < y: x_up = y
-                                if y_up < x: y_up = x
-                                bottom = compute_bottom_rectangle(
-                                    bev_points, -angle_radians, x, y, debug)
-                                top = compute_top_rectangle(
-                                    bev_points, -np.pi / 2 - angle_radians,
-                                    x_up, y_up, debug)
-                                if bottom is not None and top is not None:
-                                    center = bottom[0]
-                                    center_top = top[0]
-                                    #bottom = camera.convert_bev_to_world(bottom)
-                                    #det.centers = [[bottom[0], det.angle_radians]]
-                                    bottom = bottom[1:]
-                                    top = top[1:]
+                            bottom_iv = compute_bottom_rectangle(
+                                bev_points_iv, angle_radians, x, y, debug
+                            )  # Ensure compute_bottom_rectangle is implemented
+                            bottom = to_iv(bottom_iv)
+                            center = bottom[0]
+                            bottom = bottom[1:]
+                            lower_face = map_box_to_BEV(bottom, inv_mat)
 
-                                    lower_face = map_box_to_BEV(
-                                        bottom, inv_mat)
-                                    upper_face = map_box_to_BEV(top, inv_mat)
+                            # Check if all points in lower_face and upper_face are within the bounding box
+                            e = 5
+                            if np.all((lower_face[:, 0] + e >= x_min)
+                                              & (lower_face[:, 0] <= x_max + e)
+                                              & (lower_face[:, 1] + e >= y_min)
+                                              & (lower_face[:,
+                                                            1] <= y_max + e)):
+                                #lower_face_iv = to_iv(lower_face)
+                                draw_bottom(bounding_box_image,
+                                            lower_face.astype("int"),
+                                            color=cv_colors.MINT.value,
+                                            thickness=4)
+                                # continue
 
-                                    # Check if all points in lower_face and upper_face are within the bounding box
-                                    # if np.all((lower_face[:, 0] >= x_min) & (lower_face[:, 0] <= x_max) &
-                                    # (lower_face[:, 1] >= y_min) & (lower_face[:, 1] <= y_max)) and \
-                                    # np.all((upper_face[:, 0] >= x_min) & (upper_face[:, 0] <= x_max) &
-                                    # (upper_face[:, 1] >= y_min) & (upper_face[:, 1] <= y_max)):
 
-                                    draw_cube(boundaries_image,
-                                              lower_face.astype("int"),
-                                              upper_face.astype("int"),
-                                              color=cv_colors.ORANGE.value,
-                                              thickness=1)
-                                    #break
+                            # x_up, y_up = calculate_solution(
+                                # -np.pi / 2 + angle_radians, alpha1, beta1, d1,
+                                # -np.pi / 2 + angle_radians, alpha1, beta1, d1,
+                                # debug)
+                            # if x_up is not None and y_up is not None:
+                                # if x_up < y: x_up = y
+                                # if y_up < x: y_up = x
+                                # bottom = compute_bottom_rectangle(
+                                    # bev_points, -angle_radians, x, y, debug)
+                                # top = compute_top_rectangle(
+                                    # bev_points, -np.pi / 2 - angle_radians,
+                                    # x_up, y_up, debug)
+                                # if bottom is not None and top is not None:
+                                    # center = bottom[0]
+                                    # center_top = top[0]
+                                    # #bottom = camera.convert_bev_to_world(bottom)
+                                    # #det.centers = [[bottom[0], det.angle_radians]]
+                                    # bottom = bottom[1:]
+                                    # top = top[1:]
 
-                        bev_image = draw_quadrangles_in_BEV(
-                            bev_image, bev_points)
-                        # Optionally, draw connections between matched boxes (visualizing tracking)
-                        draw_tracking_line(boundaries_image,
-                                           prev_box_corners,
-                                           box_corners,
-                                           color=(0, 0, 255))
+                                    # lower_face = map_box_to_BEV(
+                                        # bottom, inv_mat)
+                                    # upper_face = map_box_to_BEV(top, inv_mat)
+
+                                    # # Check if all points in lower_face and upper_face are within the bounding box
+                                    # # if np.all((lower_face[:, 0] >= x_min) & (lower_face[:, 0] <= x_max) &
+                                    # # (lower_face[:, 1] >= y_min) & (lower_face[:, 1] <= y_max)) and \
+                                    # # np.all((upper_face[:, 0] >= x_min) & (upper_face[:, 0] <= x_max) &
+                                    # # (upper_face[:, 1] >= y_min) & (upper_face[:, 1] <= y_max)):
+
+                                    # draw_cube(boundaries_image,
+                                              # lower_face.astype("int"),
+                                              # upper_face.astype("int"),
+                                              # color=cv_colors.ORANGE.value,
+                                              # thickness=1)
+                                    # #break
+
+                        # bev_image = draw_quadrangles_in_BEV(
+                            # bev_image, bev_points)
+                        # # Optionally, draw connections between matched boxes (visualizing tracking)
+                        # draw_tracking_line(boundaries_image,
+                                           # prev_box_corners,
+                                           # box_corners,
+                                           # color=(0, 0, 255))
 
         resized_image = resize_to_match_height(bounding_box_image,
                                                screen_height * 2)
@@ -866,5 +1058,5 @@ def resize_to_match_height(image, target_height):
 
 
 if __name__ == "__main__":
-    video_path = '/home/dzhura/ComputerVision/data/bike.mp4'
+    video_path = '/home/dmytrozhuravlov/cv/data/Leeds.mp4'
     main(video_path, draw_boundaries=True, debug=True)

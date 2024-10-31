@@ -11,7 +11,7 @@ from enum import Enum
 # Initialize video capture and output
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
-input_video_path = '/home/dmytrozhuravlov/cv/data/OxfordTownCentreDataset.mp4'
+input_video_path = '/home/dzhura/ComputerVision/data/OxfordTownCentreDataset.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 
@@ -1215,6 +1215,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         #colored_segments = color_segments(flow_image.copy(), labels)
         bounding_box_image = next_frame.copy()
         #neighbors_dict =  find_neighbors(flow_image.copy(), labels)
+
         neighbors_dict = find_neighbors_within_mask(labels)
         # alpha = 0.5
         # bounding_box_image = cv2.addWeighted(next_frame.copy(), 1 - alpha,
@@ -1249,7 +1250,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             # Calculate the percentage of moving pixels in this component
             moving_percentage = moving_pixels_in_component / total_component_pixels
 
-            if True:  ##moving_percentage >= 0.5:
+            if True: #moving_percentage >= 0.5:
                 # Find the bounding box for the current segment
                 ys, xs = np.where(mask)
                 if xs.size > 0 and ys.size > 0:
@@ -1292,6 +1293,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         for i, segment in enumerate(segments):
             segment_label = segment['label']
+            if segment_label == 0: continue
             # Generate a unique random color for this segment
             cv2_color, plt_color = generate_random_color()
 
@@ -1437,7 +1439,6 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                     # Loop through earlier segments (which are below in the image)
                     for j in range(i):
-                        #if i == j: continue
                         other_segment = segments[j]
                         other_label = other_segment['label']
                         other_top = other_segment['top']
@@ -1447,16 +1448,19 @@ def main(video_path, draw_boundaries=True, debug=False):
                         if other_label in neighbors_dict[segment_label]:
                             relative_positions = neighbors_dict[segment_label][
                                 other_label]
-                            cv2_color = other_segment['cv2_color']
-                            plt_color = other_segment['plt_color']
+                            # cv2_color = other_segment['cv2_color']
+                            # plt_color = other_segment['plt_color']
 
                             # Check if `other_segment` is directly above `segment`
-                            if ('top' in relative_positions or 'top-left'
-                                    in relative_positions or 'top-right'
+                            if ('bottom' in relative_positions or 'bottom-left'
+                                    in relative_positions or 'bottom-right'
                                     in relative_positions):
                                 print(
                                     f"Segment {segment_label} is below neighbor segment {other_label} (which is above it)"
                                 )
+
+                                cv2_color = other_segment['cv2_color']
+                                plt_color = other_segment['plt_color']
 
                                 avg_bootom_iv += other_segment[
                                     'bottom_center'] - other_segment[

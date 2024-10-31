@@ -1,5 +1,40 @@
 import numpy as np
 
+def projection_on_bird(M, p, float_type=True):
+    """
+    Projects a 2D point `p` onto the bird's-eye view using the inverse perspective matrix `M`.
+
+    Args:
+    - p: A 2D point (x, y) as a list, tuple, or array.
+    - M: A 3x3 inverse perspective matrix.
+
+    Returns:
+    - px: The projected 2D point in the BEV space.
+    """
+    # Convert p to a NumPy array if it's not already
+    if isinstance(p, (list, tuple)):
+        p = np.array(p)
+    # Ensure p has two dimensions (x, y)
+    if p.shape[0] != 2:
+        raise ValueError("Input point p should be a 2D point with two elements.")
+
+    # Ensure M is a 3x3 matrix
+    if M.shape != (3, 3):
+        raise ValueError(f"Matrix M should be 3x3, but got shape {M.shape}.")
+
+    # Apply the inverse perspective mapping formula (homogeneous transformation)
+    px = (M[0, 0] * p[0] + M[0, 1] * p[1] + M[0, 2]) / (M[2, 0] * p[0] + M[2, 1] * p[1] + M[2, 2])
+    py = (M[1, 0] * p[0] + M[1, 1] * p[1] + M[1, 2]) / (M[2, 0] * p[0] + M[2, 1] * p[1] + M[2, 2])
+
+    if float_type: return np.array([px, py], dtype=np.float32)
+    return np.array([int(px), int(py)], dtype=np.int32)
+
+def convrt2Bird(transferI2B, img, shape):
+    return cv2.warpPerspective(img, transferI2B, (shape[1], shape[0]))
+
+def convrt2Image(transferB2I, bird, shape):
+    return cv2.warpPerspective(bird, self.transferB2I, (shape[1], shape[0]))
+
 def move_to_second_quadrant(angle):
     """
     Normalizes the input angle and moves it to the second quadrant.
@@ -125,8 +160,8 @@ def compute_angles(quadrangle, debug=False):
     
  
     if debug:
-        print(f"Lower alpha = {alpha:.2f} radians ({rad_to_deg(alpha):.2f} degrees)")
-        print(f"Lower beta = {beta:.2f} radians ({rad_to_deg(beta):.2f} degrees)")
+        print(f"Lower alpha = {rad_to_deg(alpha):.2f} degrees")
+        print(f"Lower beta = {rad_to_deg(beta):.2f} degrees")
         print(f"Lower Distance = {d:.2f}")
 
     return d, alpha, beta
@@ -262,6 +297,7 @@ def compute_bottom_rectangle_center(q, orientation, a, b, debug=False):
 def compute_bottom_rectangle(q, orientation, a, b, debug=False):
     # Extract the four vertices of the quadrangle
     # TODO arrange
+    #assert orientation < np.pi/2
     A, R, T, B = q[0], q[1], q[2], q[3] #q[3], q[0], q[1], q[2]
     
     # Step 1: Draw a ray from point B with the given orientation angle
@@ -288,10 +324,23 @@ def compute_bottom_rectangle(q, orientation, a, b, debug=False):
     #K = A + (C - A) * a / np.linalg.norm(C - A)
     K = get_intersect(C, C + orientation_vector * 1000, A, R)
     
-    # Step 6: Compute point D, which lies on the perpendicular from C with length CD = b
+       # Step 6: Compute point D, which lies on the perpendicular from C with length CD = b
     # The perpendicular direction can be found by rotating the orientation vector by 90 degrees
-    perpendicular_vector = np.array([-orientation_vector[1], orientation_vector[0]])
-    D = C + perpendicular_vector * b
+    perpendicular_vector = np.array([orientation_vector[1], -orientation_vector[0]])
+    
+    # Compute the centroid of the quadrangle
+    centroid = np.mean([A, R, T, B], axis=0)
+    
+    # Check if the perpendicular vector points towards the inside of the quadrangle
+    centroid_direction = centroid - C
+    if np.dot(perpendicular_vector, centroid_direction) < 0:
+        # Reverse the perpendicular vector if it points outward
+        perpendicular_vector = -perpendicular_vector
+    
+    # Now you can use the adjusted perpendicular_vector for further calculations
+    # Example: computing point D as C + b * perpendicular_vector
+    D = C + b * perpendicular_vector
+    #D = np.array(get_intersect(C, C + perpendicular_vector * 1000, T, B), dtype=np.float32)
     
     # Step 7: Compute the center of the rectangle formed by K, C, and D
     center = (K + D) / 2
@@ -310,7 +359,65 @@ def compute_bottom_rectangle(q, orientation, a, b, debug=False):
         print(f"Center of the bounding rectangle: {center}")
     
     return np.array([center, C, K, T, D], dtype=np.float64)
+
+
+def compute_bottom_rectangle_with(q, orientation, C, debug=False):
+    # Extract the four vertices of the quadrangle
+    # TODO arrange
+    #assert orientation < np.pi/2
+    A, R, T, B = q[0], q[1], q[2], q[3] #q[3], q[0], q[1], q[2]
     
+    # Step 1: Draw a ray from point B with the given orientation angle
+    # Compute the direction vector for the orientation
+    orientation_vector = np.array([np.cos(orientation), np.sin(orientation)])
+    ray_endpoint = B + orientation_vector * 1000  # Extend the ray far enough
+    
+    K = get_intersect(C, C + orientation_vector * 1000, A, R)
+    if K is None or K[1] > R[1]:
+        K = R #get_intersect(C, C + orientation_vector * 1000, T, R)
+    if K[1] < A[1]: K = A
+    
+       # Step 6: Compute point D, which lies on the perpendicular from C with length CD = b
+    # The perpendicular direction can be found by rotating the orientation vector by 90 degrees
+    perpendicular_vector = np.array([orientation_vector[1], -orientation_vector[0]])
+    
+    # Compute the centroid of the quadrangle
+    centroid = np.mean([A, R, T, B], axis=0)
+    
+    # Check if the perpendicular vector points towards the inside of the quadrangle
+    centroid_direction = centroid - C
+    if np.dot(perpendicular_vector, centroid_direction) < 0:
+        # Reverse the perpendicular vector if it points outward
+        perpendicular_vector = -perpendicular_vector
+    
+    # Now you can use the adjusted perpendicular_vector for further calculations
+    # Example: computing point D as C + b * perpendicular_vector
+    #D = C + b * perpendicular_vector
+    D = get_intersect(C, C + perpendicular_vector * 1000, T, B)
+    if D is None: D = T
+    D = np.array(D, dtype=np.float32)
+    if D[1] > T[1]:
+        D = T #np.array(get_intersect(C, C + perpendicular_vector * 1000, T, B), dtype=np.float32)
+    if D[1] < B[1]: D = B
+    
+    # Step 7: Compute the center of the rectangle formed by K, C, and D
+    center = (K + D) / 2
+    T = K + (D - C)
+    
+    # Debugging output
+    if debug:
+        print(f"A: {A}, B: {B}, R: {R}, T: {T}")
+        print(f"Orientation vector: {orientation_vector}")
+        # print(f"Intersection point E: {E}")
+        # print(f"Distance l: {l}")
+        print(f"Point C: {C}")
+        print(f"Point K: {K}")
+        print(f"Point T: {T}")
+        print(f"Point D: {D}")
+        print(f"Center of the bounding rectangle: {center}")
+    
+    return np.array([center, C, K, T, D], dtype=np.float64)
+
 def compute_top_rectangle(q, orientation, a, b, debug=False):
     # Extract the four vertices of the quadrangle
     # TODO arrange
@@ -342,7 +449,7 @@ def compute_top_rectangle(q, orientation, a, b, debug=False):
     
     # Step 6: Compute point D, which lies on the perpendicular from C with length CD = b
     # The perpendicular direction can be found by rotating the orientation vector by 90 degrees
-    perpendicular_vector = np.array([-orientation_vector[1], orientation_vector[0]])
+    perpendicular_vector = np.array([orientation_vector[1], -orientation_vector[0]])
     D = C - perpendicular_vector * b
     
     # Step 7: Compute the center of the rectangle formed by K, C, and D
@@ -362,6 +469,98 @@ def compute_top_rectangle(q, orientation, a, b, debug=False):
         print(f"Center of the bounding rectangle: {center}")
     
     return np.array([center, C, K, T, D], dtype=np.float64)
+    
+def compute_top_rectangle_with(q, orientation, C, debug=False):
+    # Extract the four vertices of the quadrangle
+    # TODO arrange
+    A, R, T, B = q[0], q[1], q[2], q[3]# q[3], q[0], q[1], q[2]
+    
+    # Step 1: Draw a ray from point B with the given orientation angle
+    # Compute the direction vector for the orientation
+    orientation_vector = np.array([np.cos(orientation), np.sin(orientation)])
+    ray_endpoint = T + orientation_vector * 1000  # Extend the ray far enough
+    
+    K = get_intersect(C, C + orientation_vector * 1000, A, R)
+    if K is None or K[1] < A[1]: K = A
+    if K[1] > R[1]: K = R
+    
+    # Step 6: Compute point D, which lies on the perpendicular from C with length CD = b
+    # The perpendicular direction can be found by rotating the orientation vector by 90 degrees
+    perpendicular_vector = np.array([orientation_vector[1], -orientation_vector[0]])
+
+    # Compute the centroid of the quadrangle
+    centroid = np.mean([A, R, T, B], axis=0)
+    
+    # Check if the perpendicular vector points towards the inside of the quadrangle
+    centroid_direction = centroid - C
+    if np.dot(perpendicular_vector, centroid_direction) < 0:
+        # Reverse the perpendicular vector if it points outward
+        perpendicular_vector = -perpendicular_vector
+
+    #D = C - perpendicular_vector * b
+    D = get_intersect(C, C + perpendicular_vector * 1000, T, B)
+    if D is None: D = B
+    D = np.array(D, dtype=np.float32)
+    if D[1] < B[1]: D = B
+    if D[1] > T[1]: D = T
+    
+    # Step 7: Compute the center of the rectangle formed by K, C, and D
+    center = (K + D) / 2
+    T = K + (D - C)
+    
+    # Debugging output
+    if debug:
+        print(f"A: {A}, B: {B}, R: {R}, T: {T}")
+        print(f"Orientation vector: {orientation_vector}")
+        print(f"Point C: {C}")
+        print(f"Point K: {K}")
+        print(f"Point T: {T}")
+        print(f"Point D: {D}")
+        print(f"Center of the bounding rectangle: {center}")
+    
+    return np.array([center, T, K, C, D], dtype=np.float64)
+
+
+
+def compute_rectangle_points(center, angle, width, length):
+    """
+    Compute the four corner points of a rectangle based on its center, orientation angle, width, and length.
+    
+    Args:
+    - center: tuple or np.array of shape (2,), the (x, y) coordinates of the rectangle's center.
+    - angle: float, the orientation angle of the rectangle in radians.
+    - width: float, the width of the rectangle.
+    - length: float, the length of the rectangle.
+    
+    Returns:
+    - points: np.array of shape (4, 2), the four corner points of the rectangle.
+    """
+    # Half width and length
+    half_width = width / 2
+    half_length = length / 2
+
+    # Define the rectangle in its local coordinate system (before rotation)
+    local_points = np.array([
+        [-half_length, -half_width],  # Bottom-left
+        [half_length, -half_width],   # Bottom-right
+        [half_length, half_width],    # Top-right
+        [-half_length, half_width]    # Top-left
+    ])
+
+    # Rotation matrix for the given angle
+    rotation_matrix = np.array([
+        [np.cos(angle), -np.sin(angle)],
+        [np.sin(angle), np.cos(angle)]
+    ])
+
+    # Rotate and translate the points to global coordinates
+    global_points = np.dot(local_points, rotation_matrix.T) + center
+    
+    # Find the index of the lower-left corner (lowest y, then lowest x if tied)
+    lower_left_index = np.lexsort((global_points[:, 0], global_points[:, 1]))[0]
+
+
+    return global_points, lower_left_index
 
 # Calculate the bottom center of a quadrangle based on orientation
 def get_bottom_center(q, orient, length, e=10, debug=False):
@@ -414,12 +613,6 @@ def get_bottom_center(q, orient, length, e=10, debug=False):
 
     return center
 
-def angle_to_vector(angle):
-    """
-    Converts an angle in radians to a 2D vector (x, y).
-    """
-    return np.array([np.cos(angle), np.sin(angle)])
-
 def normalize_angle(ang):
     """
     Normalize an angle to the range (0, 2*pi).
@@ -448,6 +641,11 @@ def calculate_solution(orient1, alpha1, beta1, dist1, orient2, alpha2, beta2, di
     sin_beta1 = np.sin(beta1) if np.abs(np.sin(beta1)) >= small_value else small_value
     sin_beta2 = np.sin(beta2) if np.abs(np.sin(beta2)) >= small_value else small_value
 
+    # assert sin_alpha1 > np.pi/2
+    # assert sin_alpha2 > np.pi/2
+    # assert sin_beta1 > np.pi/2
+    # assert sin_beta2 > np.pi/2
+
     b = np.array([dist1, dist2])
     A = np.array([
         [np.sin(alpha1 + orient1) / sin_alpha1, np.cos(beta1 - orient1) / sin_beta1],
@@ -457,14 +655,70 @@ def calculate_solution(orient1, alpha1, beta1, dist1, orient2, alpha2, beta2, di
     # Use least squares to solve Ax = b
     x, y = np.linalg.lstsq(A, b, rcond=None)[0]  # Using least squares solution
 
-    if debug:
-        print(f"x : {x}, y : {y}")
-
     # Ensure positive solutions for x and y
     if x > 0 and y > 0:
+        if debug:
+            print(f"x : {x}, y : {y}")
         return x, y
 
     return None, None
+
+# def calculate_solution(orient1, alpha1, beta1, dist1, orient2, alpha2, beta2, dist2, debug=False):
+    # # Set a small value for approximation
+    # small_value = 1e-6
+
+    # # Approximate small sine values for alpha1 and alpha2 to avoid division by 0
+    # sin_alpha1 = np.sin(alpha1) if np.abs(np.sin(alpha1)) >= small_value else small_value
+    # sin_alpha2 = np.sin(alpha2) if np.abs(np.sin(alpha2)) >= small_value else small_value
+    # sin_beta1 = np.sin(beta1) if np.abs(np.sin(beta1)) >= small_value else small_value
+    # sin_beta2 = np.sin(beta2) if np.abs(np.sin(beta2)) >= small_value else small_value
+
+    # b = np.array([dist1, dist2])
+    
+    # # Define the matrix A for the system of equations
+    # A = np.array([
+        # [np.sin(alpha1 + orient1) / sin_alpha1, np.cos(beta1 - orient1) / sin_beta1],
+        # [np.sin(alpha2 + orient2) / sin_alpha2, np.cos(beta2 - orient2) / sin_beta2]
+    # ])
+    
+    # # Use least squares to solve the system Ax = b
+    # x, y = np.linalg.lstsq(A, b, rcond=None)[0]  # Using least squares solution
+
+    # if debug:
+        # print(f"Initial solution: x = {x}, y = {y}")
+    
+    # # Add regularization for positivity
+    # if x <= 0 or y <= 0:
+        # # Penalize negative values and use least squares again with a small shift
+        # regularization_term = small_value * np.array([1, 1])
+        # A_reg = A + regularization_term
+        # x, y = np.linalg.lstsq(A_reg, b, rcond=None)[0]
+        
+        # if debug:
+            # print(f"After regularization: x = {x}, y = {y}")
+
+    # # Ensure positive solutions for x and y
+    # if x > 0 and y > 0:
+        # return x, y
+
+    # # Adjust angles or distances slightly if the solution is not positive
+    # for adjustment in np.linspace(-small_value, small_value, 10):
+        # A_adjusted = np.array([
+            # [np.sin(alpha1 + orient1 + adjustment) / sin_alpha1, np.cos(beta1 - orient1 + adjustment) / sin_beta1],
+            # [np.sin(alpha2 + orient2 + adjustment) / sin_alpha2, np.cos(beta2 - orient2 + adjustment) / sin_beta2]
+        # ])
+        
+        # x, y = np.linalg.lstsq(A_adjusted, b, rcond=None)[0]
+        
+        # if debug:
+            # print(f"Adjusted solution with adjustment {adjustment}: x = {x}, y = {y}")
+        
+        # # If the solution is positive after adjustment, return it
+        # if x > 0 and y > 0:
+            # return x, y
+
+    # # If no positive solution was found, return None
+    # return None, None
 
 def iv(a):
     return (a[0], -a[1])

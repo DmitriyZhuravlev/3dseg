@@ -11,7 +11,7 @@ from enum import Enum
 # Initialize video capture and output
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
-input_video_path = '/home/dzhura/ComputerVision/data/OxfordTownCentreDataset.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/OxfordTownCentreDataset.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 
@@ -307,7 +307,7 @@ def color_neighbors(image, labels, neighbors_dict, moving_mask):
 # return colored_image
 
 
-def find_neighbors_within_mask(labels, e=10):
+def find_neighbors_within_mask(labels, e=1):
     # Initialize the dictionary with each unique label
     neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
 
@@ -924,26 +924,27 @@ def faces_overlap(face1, face2):
 
 
 # def faces_overlap(face1, face2, epsilon=10.0):
-    # """
-    # Check if two faces overlap in the BEV or image space, with optional epsilon proximity.
+# """
+# Check if two faces overlap in the BEV or image space, with optional epsilon proximity.
 
-    # Parameters:
-    # - face1, face2: Arrays of four corner points for each face, formatted as [(x, y), ...].
-    # - epsilon: Distance buffer around each polygon for proximity overlap.
+# Parameters:
+# - face1, face2: Arrays of four corner points for each face, formatted as [(x, y), ...].
+# - epsilon: Distance buffer around each polygon for proximity overlap.
 
-    # Returns:
-    # - True if the faces overlap or are within epsilon distance, False otherwise.
-    # """
-    # # Define polygons for each face based on the corner points
-    # p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
-    # p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
+# Returns:
+# - True if the faces overlap or are within epsilon distance, False otherwise.
+# """
+# # Define polygons for each face based on the corner points
+# p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
+# p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
 
-    # # Apply the epsilon buffer to both polygons
-    # p1_buffered = p1.buffer(epsilon)
-    # p2_buffered = p2.buffer(epsilon)
+# # Apply the epsilon buffer to both polygons
+# p1_buffered = p1.buffer(epsilon)
+# p2_buffered = p2.buffer(epsilon)
 
-    # # Check if the buffered polygons intersect
-    # return p1_buffered.intersects(p2_buffered)
+# # Check if the buffered polygons intersect
+# return p1_buffered.intersects(p2_buffered)
+
 
 def combined_segmentation(next_frame, flow, region_size, ruler,
                           slic_iterations):
@@ -1091,6 +1092,39 @@ def join_segmentations_cv2(labels1, labels2):
 
     return joined_labels
 
+# Function to convert labels to a color image
+def labels_to_color(labels):
+    # Create a color map: assign each unique label a random color
+    unique_labels = np.unique(labels)
+    color_map = {label: np.random.randint(0, 255, 3) for label in unique_labels}
+    
+    # Create an RGB image where each pixel is colored based on its label
+    color_image = np.zeros((labels.shape[0], labels.shape[1], 3), dtype=np.uint8)
+    for label, color in color_map.items():
+        color_image[labels == label] = color
+    
+    color_image[labels == 0] = cv_colors.WHITE.value
+    return color_image
+
+def reenumerate_connected_labels(labels):
+    unique_labels = np.unique(labels)
+    max_label = 0
+    output_labels = np.zeros_like(labels, dtype=np.int32)
+
+    # Re-label each unique segment
+    for label in unique_labels:
+        if label == 0:  # skip background label
+            continue
+        mask = (labels == label).astype(np.uint8)
+        num_labels, labeled_mask = cv2.connectedComponents(mask)
+        
+        # Assign new labels starting from the maximum label used so far
+        for component in range(1, num_labels):
+            output_labels[labeled_mask == component] = max_label + component
+        max_label += num_labels - 1
+
+    return output_labels
+
 
 def main(video_path, draw_boundaries=True, debug=False):
 
@@ -1157,6 +1191,23 @@ def main(video_path, draw_boundaries=True, debug=False):
         _, moving_mask = cv2.threshold(blurred_diff, 20, 255,
                                        cv2.THRESH_BINARY)
         #moving_mask_bin = moving_mask // 255
+        # Get connected components within the mask
+        num_labels, labels = cv2.connectedComponents(moving_mask)
+
+        # Create an empty color image to display components
+        colored_components = np.zeros((*moving_mask.shape, 3), dtype=np.uint8)
+
+        # Assign a unique color to each label
+        for label in range(
+                1, num_labels):  # Start from 1 to ignore the background
+            mask = (labels == label)
+            color = np.random.randint(0, 255, 3)  # Generate a random color
+            colored_components[mask] = color  # Apply color to the component
+
+        # Display the result
+        cv2.imshow("Connected Components",
+                   resize_to_match_height(colored_components, screen_height))
+        #cv2.waitKey(0)
 
         # Display the moving mask
         cv2.imshow('Moving Mask',
@@ -1176,8 +1227,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                    resize_to_match_height(flow_image, screen_height))
         #cv2.waitKey(0)
 
-        region_size = 10  #200 #100 #15  #10#30
-        ruler = 10  #150 # 100 #20 #14
+        region_size = 5*10  #200 #100 #15  #10#30
+        ruler = 5*10  #150 # 100 #20 #14
 
         slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -1198,6 +1249,31 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         labels = join_segmentations_cv2(labels1, labels2)
         num_labels = np.max(labels) + 1
+        
+        # If debug is enabled
+        if False and debug:
+            labels1[moving_mask == 0] = 0 
+            labels2[moving_mask == 0] = 0
+            labels[moving_mask == 0] = 0 
+            # Convert labels to color images for visualization
+            labels1_color = labels_to_color(labels1)
+            labels2_color = labels_to_color(labels2)
+            labels_color = labels_to_color(labels)
+        
+            # Display each segmentation using cv2
+            cv2.imshow("SLIC1 Segmentation", labels1_color)
+            cv2.imshow("SLIC2 Segmentation", labels2_color)
+            cv2.imshow("Joint Segmentation", labels_color)
+        
+            # Print statistics
+            print("Number of unique labels in SLIC1:", np.unique(labels1).size)
+            print("Number of unique labels in SLIC2:", np.unique(labels2).size)
+            print("Number of unique labels in joint segmentation:", np.unique(labels).size)
+            print("Total labels in joint segmentation:", num_labels)
+        
+            # Wait until any key is pressed, then close all windows
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
         # Apply connected components labeling to separate unconnected components
         #num_labels, labels = cv2.connectedComponents(labels.astype(np.uint8), connectivity=8)
@@ -1205,6 +1281,17 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Remove labels outside the moving mask by setting them to 0
         labels[moving_mask ==
                0] = 0  # Set areas outside the moving mask to label 0
+
+        labels = reenumerate_connected_labels(labels)
+        num_labels = np.max(labels)
+        # Debug visualization (optional)
+        if False and debug:
+            labels_combined_color = labels_to_color(labels)
+            cv2.imshow("Re-enumerated Combined Segmentation", labels_combined_color)
+            print("Total unique labels in combined segmentation:", num_labels)
+        
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
         contour_mask = slic1.getLabelContourMask(False)
         bev_image = flow_image.copy()
@@ -1250,7 +1337,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             # Calculate the percentage of moving pixels in this component
             moving_percentage = moving_pixels_in_component / total_component_pixels
 
-            if True: #moving_percentage >= 0.5:
+            if True:  #moving_percentage >= 0.5:
                 # Find the bounding box for the current segment
                 ys, xs = np.where(mask)
                 if xs.size > 0 and ys.size > 0:
@@ -1443,7 +1530,15 @@ def main(video_path, draw_boundaries=True, debug=False):
                         other_label = other_segment['label']
                         other_top = other_segment['top']
 
-                        #if faces_overlap(avg_bootom_iv,  other_top):
+                        if faces_overlap(avg_bootom_iv, other_top):
+                            cv2_color = other_segment['cv2_color']
+                            plt_color = other_segment['plt_color']
+
+                            avg_bootom_iv += other_segment[
+                                'bottom_center'] - other_segment['top_center']
+                            z = other_segment['z'] + other_segment['height']
+
+                            break
                         # Check if other_segment is a neighbor of segment
                         if other_label in neighbors_dict[segment_label]:
                             relative_positions = neighbors_dict[segment_label][
@@ -1452,9 +1547,9 @@ def main(video_path, draw_boundaries=True, debug=False):
                             # plt_color = other_segment['plt_color']
 
                             # Check if `other_segment` is directly above `segment`
-                            if ('bottom' in relative_positions or 'bottom-left'
-                                    in relative_positions or 'bottom-right'
-                                    in relative_positions):
+                            if ('bottom' in relative_positions
+                                    or 'bottom-left' in relative_positions
+                                    or 'bottom-right' in relative_positions):
                                 print(
                                     f"Segment {segment_label} is below neighbor segment {other_label} (which is above it)"
                                 )
@@ -1554,7 +1649,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        draw_cubes_in_3d(lower_faces, heights, colors)
+        if False and debug:
+            draw_cubes_in_3d(lower_faces, heights, colors)
 
     # Release resources
     cap.release()

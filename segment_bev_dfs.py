@@ -8,11 +8,20 @@ import flowiz as fz
 from lifting import *
 from enum import Enum
 
+import os
+
+# Define your capture source and output directory
+output_dir = "output_frames"
+output_bev_dir = "output_bev_frames"
+os.makedirs(output_dir, exist_ok=True)
+
 # Initialize video capture and output
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
-input_video_path = '/home/dmytrozhuravlov/cv/data/OxfordTownCentreDataset.mp4'
+# /home/dzhura/ComputerVision/data
+input_video_path = '/home/dzhura/ComputerVision/data/OxfordTownCentreDataset.mp4'
 output_video_path = 'output_with_cubes.mp4'
+
 
 
 class cv_colors(Enum):
@@ -211,13 +220,52 @@ def compute_average_frame(video_path, avg_frame_path):
     cv2.imwrite(avg_frame_path, avg_frame)
     return avg_frame
 
+def get_motion_mask(flow_mag, motion_thresh=1, kernel=np.ones((7,7))):
+    """ Obtains Detection Mask from Optical Flow Magnitude
+        Inputs:
+            flow_mag (array) Optical Flow magnitude
+            motion_thresh - thresold to determine motion
+            kernel - kernal for Morphological Operations
+        Outputs:
+            motion_mask - Binray Motion Mask
+        """
+    motion_mask = np.uint8(flow_mag > motion_thresh)*255
+
+    motion_mask = cv2.erode(motion_mask, kernel, iterations=1)
+    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+    
+    return motion_mask
+
+def compute_optical_flow1(prev_frame, next_frame):
+    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
+    
+    # blurr image
+    prev_gray = cv2.GaussianBlur(prev_gray, dst=None, ksize=(3,3), sigmaX=5)
+    next_gray = cv2.GaussianBlur(next_gray, dst=None, ksize=(3,3), sigmaX=5)
+
+    flow = cv2.calcOpticalFlowFarneback(prev_gray, next_gray, None, 0.5, 3, 15,
+                                        3, 5, 1.2, 0)
+    return flow
 
 def compute_optical_flow(prev_frame, next_frame):
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
     next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
+    
+    # Preprocess with bilateral filter for edge preservation
+    prev_gray = cv2.bilateralFilter(prev_gray, d=5, sigmaColor=50, sigmaSpace=50)
+    next_gray = cv2.bilateralFilter(next_gray, d=5, sigmaColor=50, sigmaSpace=50)
 
-    flow = cv2.calcOpticalFlowFarneback(prev_gray, next_gray, None, 0.5, 3, 15,
-                                        3, 5, 1.2, 0)
+    # Calculate optical flow with fine-tuned parameters
+    flow = cv2.calcOpticalFlowFarneback(prev_gray, next_gray, None,
+                                        pyr_scale=0.5,   # pyramid scale
+                                        levels=5,        # pyramid levels
+                                        winsize=21,      # window size
+                                        iterations=5,    # iterations per level
+                                        poly_n=7,        # neighborhood size
+                                        poly_sigma=1.5,  # standard deviation
+                                        flags=0)
     return flow
 
 
@@ -307,7 +355,7 @@ def color_neighbors(image, labels, neighbors_dict, moving_mask):
 # return colored_image
 
 
-def find_neighbors_within_mask(labels, e=1):
+def find_neighbors_within_mask(labels, e=10):
     # Initialize the dictionary with each unique label
     neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
 
@@ -883,8 +931,8 @@ def flow_to_image(flow):
                                     cv2.NORM_MINMAX))  # Value: magnitude
 
     # Convert HSV to BGR for display or further processing
-    flow_image = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    return flow_image
+    flow_image_bev = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return flow_image_bev
 
 
 # # Utility function to check face overlap in BEV
@@ -959,12 +1007,12 @@ def combined_segmentation(next_frame, flow, region_size, ruler,
     labels_image = slic_image.getLabels()
 
     # Convert optical flow to an image-like format for segmentation
-    flow_image = flow_to_image(flow)
+    flow_image_bev = flow_to_image(flow)
 
     region_size = 20  #200 #100 #15  #10#30
     ruler = 10  #150 # 100 #20 #14
     # Perform superpixel segmentation on the flow image
-    slic_flow = cv2.ximgproc.createSuperpixelSLIC(flow_image,
+    slic_flow = cv2.ximgproc.createSuperpixelSLIC(flow_image_bev,
                                                   algorithm=cv2.ximgproc.MSLIC,
                                                   region_size=region_size,
                                                   ruler=ruler)
@@ -1128,7 +1176,7 @@ def reenumerate_connected_labels(labels):
 
 def main(video_path, draw_boundaries=True, debug=False):
 
-    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix()
+    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.1)
 
     cap = cv2.VideoCapture(input_video_path)
     # Get video properties
@@ -1148,6 +1196,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                                    ipm_matrix,
                                    target_shape,
                                    flags=cv2.INTER_CUBIC)
+    previous_flow_bev = np.zeros((prev_bev.shape[0], prev_bev.shape[1], 2), dtype=np.float32)
     avg_frame = compute_average_frame(video_path, 'avg_frame.png')
 
     avg_bev = cv2.warpPerspective(avg_frame,
@@ -1182,14 +1231,16 @@ def main(video_path, draw_boundaries=True, debug=False):
                                        ipm_matrix,
                                        target_shape,
                                        flags=cv2.INTER_CUBIC)
+                                       
 
         # Compute the difference and create the moving mask
         diff = cv2.absdiff(next_bev, avg_bev)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         ratio = 0.1
         blurred_diff = cv2.GaussianBlur(gray_diff, (5, 5), 0)
-        _, moving_mask = cv2.threshold(blurred_diff, 20, 255,
-                                       cv2.THRESH_BINARY)
+        _, moving_mask = cv2.threshold(blurred_diff, 20, 255, cv2.THRESH_BINARY)
+    
+        #moving_mask = cv2.dilate(moving_mask, None, iterations=1)
         #moving_mask_bin = moving_mask // 255
         # Get connected components within the mask
         num_labels, labels = cv2.connectedComponents(moving_mask)
@@ -1213,24 +1264,33 @@ def main(video_path, draw_boundaries=True, debug=False):
         cv2.imshow('Moving Mask',
                    resize_to_match_height(moving_mask, screen_height))
         #cv2.waitKey(0)
+        
+        if False and debug:
+            flow = compute_optical_flow(prev_frame, next_frame)
+            flow_image = fz.convert_from_flow(flow)
+            
+            # Display the flow visualization
+            cv2.imshow("Optical Flow ", resize_to_match_height(flow_image, screen_height//2))
+            cv2.waitKey(0)
 
         # Compute optical flow and warp it to BEV
-        flow = compute_optical_flow(prev_bev, next_bev)
-        #flow_image = flow_to_image(flow)
-        flow_image = fz.convert_from_flow(flow)
+        flow_bev = compute_optical_flow(prev_bev, next_bev)
+        smoothed_flow = (previous_flow_bev + flow_bev) / 2  # Adjust to average over more frames if needed
+        #flow_image_bev = flow_to_image(flow)
+        flow_image_bev = fz.convert_from_flow(smoothed_flow)
 
         # Set pixels outside the moving mask to white
-        flow_image[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
+        #flow_image_bev[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
 
         # Display the flow visualization
         cv2.imshow("Optical Flow Visualization",
-                   resize_to_match_height(flow_image, screen_height))
+                   resize_to_match_height(flow_image_bev, screen_height))
         #cv2.waitKey(0)
 
         region_size = 5*10  #200 #100 #15  #10#30
         ruler = 5*10  #150 # 100 #20 #14
 
-        slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image,
+        slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image_bev,
                                                   algorithm=cv2.ximgproc.MSLIC,
                                                   region_size=region_size,
                                                   ruler=ruler)
@@ -1251,18 +1311,26 @@ def main(video_path, draw_boundaries=True, debug=False):
         num_labels = np.max(labels) + 1
         
         # If debug is enabled
-        if False and debug:
-            labels1[moving_mask == 0] = 0 
-            labels2[moving_mask == 0] = 0
-            labels[moving_mask == 0] = 0 
+
+        bev_output = flow_image_bev.copy()
+        contour_mask1 = slic1.getLabelContourMask(False)
+        contour_mask2 = slic2.getLabelContourMask(False)
+        bev_output[0 < contour_mask1] = cv_colors.BLACK.value
+        bev_output[0 < contour_mask2] = cv_colors.BLACK.value
+        #cv2.imshow("Countour mask", bev_image)
+
+        if False and debug:        
+            # labels1[moving_mask == 0] = 0 
+            # labels2[moving_mask == 0] = 0
+            # labels[moving_mask == 0] = 0 
             # Convert labels to color images for visualization
-            labels1_color = labels_to_color(labels1)
-            labels2_color = labels_to_color(labels2)
+            # labels1_color = labels_to_color(labels1)
+            # labels2_color = labels_to_color(labels2)
             labels_color = labels_to_color(labels)
         
             # Display each segmentation using cv2
-            cv2.imshow("SLIC1 Segmentation", labels1_color)
-            cv2.imshow("SLIC2 Segmentation", labels2_color)
+            # cv2.imshow("SLIC1 Segmentation", labels1_color)
+            # cv2.imshow("SLIC2 Segmentation", labels2_color)
             cv2.imshow("Joint Segmentation", labels_color)
         
             # Print statistics
@@ -1272,15 +1340,14 @@ def main(video_path, draw_boundaries=True, debug=False):
             print("Total labels in joint segmentation:", num_labels)
         
             # Wait until any key is pressed, then close all windows
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
 
         # Apply connected components labeling to separate unconnected components
         #num_labels, labels = cv2.connectedComponents(labels.astype(np.uint8), connectivity=8)
 
         # Remove labels outside the moving mask by setting them to 0
-        labels[moving_mask ==
-               0] = 0  # Set areas outside the moving mask to label 0
+        #labels[moving_mask == 0] = 0  # Set areas outside the moving mask to label 0
 
         labels = reenumerate_connected_labels(labels)
         num_labels = np.max(labels)
@@ -1293,25 +1360,25 @@ def main(video_path, draw_boundaries=True, debug=False):
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        contour_mask = slic1.getLabelContourMask(False)
-        bev_image = flow_image.copy()
-        bev_image[0 < contour_mask] = cv_colors.WHITE.value
+        # contour_mask = slic1.getLabelContourMask(False)
+        # bev_image = flow_image_bev.copy()
+        # bev_image[0 < contour_mask] = cv_colors.WHITE.value
         # cv2.imshow('getLabelContourMask', resize_to_match_height(result, screen_height))
         # cv2.waitKey(0)
 
-        #colored_segments = color_segments(flow_image.copy(), labels)
+        #colored_segments = color_segments(flow_image_bev.copy(), labels)
         bounding_box_image = next_frame.copy()
-        #neighbors_dict =  find_neighbors(flow_image.copy(), labels)
+        #neighbors_dict =  find_neighbors(flow_image_bev.copy(), labels)
 
         neighbors_dict = find_neighbors_within_mask(labels)
         # alpha = 0.5
         # bounding_box_image = cv2.addWeighted(next_frame.copy(), 1 - alpha,
         # bounding_box_image, alpha, 0)
 
-        cv2.imshow('Segmentation',
-                   resize_to_match_height(bev_image, screen_height))
+        # cv2.imshow('Segmentation',
+                   # resize_to_match_height(bev_image, screen_height))
 
-        # colored_image = color_neighbors(flow_image.copy(), labels, neighbors_dict, moving_mask)
+        # colored_image = color_neighbors(flow_image_bev.copy(), labels, neighbors_dict, moving_mask)
         # cv2.imshow('Colored', resize_to_match_height(colored_image, screen_height))
         # cv2.waitKey(0)
 
@@ -1337,7 +1404,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             # Calculate the percentage of moving pixels in this component
             moving_percentage = moving_pixels_in_component / total_component_pixels
 
-            if True:  #moving_percentage >= 0.5:
+            if moving_percentage >= 0.2:
                 # Find the bounding box for the current segment
                 ys, xs = np.where(mask)
                 if xs.size > 0 and ys.size > 0:
@@ -1351,7 +1418,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                                    )  # Right-most point
 
                     # Extract the flow vectors inside the box
-                    flow_in_box = flow[mask]  # Flow vectors within the box
+                    flow_in_box = smoothed_flow[mask]  # Flow vectors within the box
                     # Compute the average flow vector in the box
                     avg_flow_vector = np.mean(flow_in_box, axis=0)
 
@@ -1530,15 +1597,15 @@ def main(video_path, draw_boundaries=True, debug=False):
                         other_label = other_segment['label']
                         other_top = other_segment['top']
 
-                        if faces_overlap(avg_bootom_iv, other_top):
-                            cv2_color = other_segment['cv2_color']
-                            plt_color = other_segment['plt_color']
+                        # if faces_overlap(avg_bootom_iv, other_top):
+                            # cv2_color = other_segment['cv2_color']
+                            # plt_color = other_segment['plt_color']
 
-                            avg_bootom_iv += other_segment[
-                                'bottom_center'] - other_segment['top_center']
-                            z = other_segment['z'] + other_segment['height']
+                            # avg_bootom_iv += other_segment[
+                                # 'bottom_center'] - other_segment['top_center']
+                            # z = other_segment['z'] + other_segment['height']
 
-                            break
+                            # break
                         # Check if other_segment is a neighbor of segment
                         if other_label in neighbors_dict[segment_label]:
                             relative_positions = neighbors_dict[segment_label][
@@ -1547,7 +1614,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                             # plt_color = other_segment['plt_color']
 
                             # Check if `other_segment` is directly above `segment`
-                            if ('bottom' in relative_positions
+                            if True or ('bottom' in relative_positions
                                     or 'bottom-left' in relative_positions
                                     or 'bottom-right' in relative_positions):
                                 print(
@@ -1581,7 +1648,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                     # thickness=3)
 
                     draw_cube(
-                        bev_image,
+                        bev_output,
                         avg_bottom.astype("int"),
                         avg_top.astype("int"),
                         color=cv2_color,  #cv_colors.ORANGE.value,
@@ -1635,7 +1702,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                                                screen_height // 2)
         # Resize BEV image to match the height of bounding_box_image
         if show_warp:
-            cv2.imshow('BEV', resize_to_match_height(bev_image, screen_height))
+            cv2.imshow('BEV', resize_to_match_height(bev_output, screen_height))
             # bev_image_resized = resize_to_match_height(
             # crop_warp(bev_image),
             # screen_height)  #bounding_box_image.shape[0])
@@ -1643,6 +1710,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             # resized_image = combined_image  #cv2.resize(combined_image, (screen_width, screen_height))
 
         prev_frame = next_frame
+        previous_flow_bev = flow_bev
         cv2.imshow('Bounding Boxes', resized_image)
 
         if cv2.waitKey(30) & 0xFF == 27:  # Esc key to stop

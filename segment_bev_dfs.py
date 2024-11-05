@@ -1176,7 +1176,7 @@ def reenumerate_connected_labels(labels):
 
 def main(video_path, draw_boundaries=True, debug=False):
 
-    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.1)
+    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.5)
 
     cap = cv2.VideoCapture(input_video_path)
     # Get video properties
@@ -1275,9 +1275,23 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         # Compute optical flow and warp it to BEV
         flow_bev = compute_optical_flow(prev_bev, next_bev)
-        smoothed_flow = (previous_flow_bev + flow_bev) / 2  # Adjust to average over more frames if needed
+        smoothed_flow = flow_bev #(previous_flow_bev + flow_bev) / 2  # Adjust to average over more frames if needed
         #flow_image_bev = flow_to_image(flow)
         flow_image_bev = fz.convert_from_flow(smoothed_flow)
+        
+        # separate into magntiude and angle
+        mag, ang = cv2.cartToPolar(smoothed_flow[..., 0], smoothed_flow[..., 1])
+        
+        # get variable motion thresh based on prior knowledge of camera position
+        #motion_thresh = np.c_[np.linspace(0.3, 1, 1080)].repeat(1920, axis=-1)
+        
+        # get motion mask
+        moving_mask = get_motion_mask(mag, motion_thresh=0.5)
+        
+                # Display the moving mask
+        cv2.imshow('Moving Mask Flow',
+                   resize_to_match_height(moving_mask, screen_height))
+
 
         # Set pixels outside the moving mask to white
         #flow_image_bev[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
@@ -1292,8 +1306,8 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image_bev,
                                                   algorithm=cv2.ximgproc.MSLIC,
-                                                  region_size=region_size,
-                                                  ruler=ruler)
+                                                  region_size=region_size//2,
+                                                  ruler=ruler//2)
         slic1.iterate(slic_iterations)
         #slic1.enforceLabelConnectivity(min_element_size=region_size)
 
@@ -1316,7 +1330,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         contour_mask1 = slic1.getLabelContourMask(False)
         contour_mask2 = slic2.getLabelContourMask(False)
         bev_output[0 < contour_mask1] = cv_colors.BLACK.value
-        bev_output[0 < contour_mask2] = cv_colors.BLACK.value
+        #bev_output[0 < contour_mask2] = cv_colors.BLACK.value
         #cv2.imshow("Countour mask", bev_image)
 
         if False and debug:        

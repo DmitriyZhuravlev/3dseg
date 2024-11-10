@@ -1401,24 +1401,6 @@ def main(video_path, draw_boundaries=True, debug=False):
         for label in range(1, num_labels):
             mask = (labels == label)
 
-            # # Find the coordinates of non-zero pixels in the mask
-            # points = np.column_stack(np.where(mask.astype(np.uint8) > 0))
-        
-            # # Check if there are enough points to form a hull
-            # if len(points) < 3:
-                # continue  # Convex hull requires at least 3 points
-        
-            # # Compute the convex hull of these points
-            # hull_points = cv2.convexHull(points)
-        
-            # # Create an empty mask to draw the convex hull
-            # convex_hull_mask = np.zeros_like(mask, dtype=np.uint8)
-        
-            # # Draw the convex hull as a filled polygon
-            # cv2.fillConvexPoly(convex_hull_mask, hull_points, 255)
-            # mask = convex_hull_mask
-
-
             # Calculate the total number of pixels in this component
             total_component_pixels = np.sum(mask)
             # Calculate the number of moving pixels in this component
@@ -1548,6 +1530,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                     bev_points_iv, -np.pi / 2 + angle_radians,
                     top_point_bev_iv,
                     debug)  # Ensure compute_top_rectangle is implemented
+                if bottom is None or top_iv is None:
+                    continue
                 if bottom is not None and top_iv is not None:
 
                     y2 = np.linalg.norm(top_iv[2] - top_iv[3])
@@ -1619,9 +1603,9 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                     # Loop through earlier segments (which are below in the image)
                     for j, other_segment in enumerate(segments[:i]):
-                    # for j in range(i):
-                        # other_segment = segments[j]
                         other_label = other_segment['label']
+                        if other_label == segment_label:
+                            continue
                         # other_top = other_segment['top']
                         # other_bottom = other_segment['bottom']
 
@@ -1650,29 +1634,19 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                                 # Generate the perspective transformation matrices
                                 loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                                #loc_inv = cv2.getPerspectiveTransform(pts2, pts1)
                                 
-                                #avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, loc_persp))
-                                avg_bootom_iv = map_points_to_BEV(avg_lower_face, loc_persp)
+                                avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, loc_persp))
+                                #avg_bootom_iv = map_points_to_BEV(avg_lower_face, loc_persp)
 
                                 z = other_segment['z'] + other_segment['height']
 
                                 break
 
+
                     segment['top'] = avg_top_iv
                     segment['bottom'] = avg_bootom_iv
                     segment['cv2_color'] = cv2_color
                     segment['plt_color'] = plt_color
-
-                    # draw_bottom(
-                    # bev_image,
-                    # avg_bottom.astype("int"),
-                    # color=cv2_color,  # cv_colors.BLUE.value,
-                    # thickness=1)
-                    # draw_bottom(bev_image,
-                    # avg_top.astype("int"),
-                    # color=cv_colors.GREEN.value,
-                    # thickness=3)
 
                     draw_cube(
                         bev_output,
@@ -1702,11 +1676,12 @@ def main(video_path, draw_boundaries=True, debug=False):
                     #segment['bottom'] = avg_bottom
 
                     #Collect lower and upper faces for 3D rendering
-                    lower_faces.append(
-                        avg_bottom_3d
-                    )  # Lower face remains 2D (or use zeros for Z if required)
-                    heights.append(height)  # Now a 3D face
-                    colors.append(plt_color)
+                    if len(avg_bottom_3d) == 4:
+                        lower_faces.append(
+                            avg_bottom_3d
+                        )  # Lower face remains 2D (or use zeros for Z if required)
+                        heights.append(height)  # Now a 3D face
+                        colors.append(plt_color)
 
         out.write(bounding_box_image)
         resized_image = resize_to_match_height(bounding_box_image,
@@ -1728,7 +1703,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        if debug and frame_count == 80:
+        if debug:# and frame_count == 80:
             draw_cubes_in_3d(lower_faces, heights, colors)
 
     # Release resources

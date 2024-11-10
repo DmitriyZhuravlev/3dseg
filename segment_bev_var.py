@@ -1618,11 +1618,12 @@ def main(video_path, draw_boundaries=True, debug=False):
                     z = 0
 
                     # Loop through earlier segments (which are below in the image)
-                    if False: #for j in range(i):
-                        other_segment = segments[j]
+                    for j, other_segment in enumerate(segments[:i]):
+                    # for j in range(i):
+                        # other_segment = segments[j]
                         other_label = other_segment['label']
-                        other_top = other_segment['top']
-                        other_bottom = other_segment['bottom']
+                        # other_top = other_segment['top']
+                        # other_bottom = other_segment['bottom']
 
                         # Check if other_segment is a neighbor of segment
                         if other_label in neighbors_dict[segment_label]:

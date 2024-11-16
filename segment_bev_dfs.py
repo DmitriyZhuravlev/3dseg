@@ -220,7 +220,7 @@ def compute_average_frame(video_path, avg_frame_path):
     cv2.imwrite(avg_frame_path, avg_frame)
     return avg_frame
 
-def get_motion_mask(flow_mag, motion_thresh=1, kernel=np.ones((7,7))):
+def get_motion_mask(flow_mag, motion_thresh=1, kernel=np.ones((1,1))):
     """ Obtains Detection Mask from Optical Flow Magnitude
         Inputs:
             flow_mag (array) Optical Flow magnitude
@@ -233,7 +233,7 @@ def get_motion_mask(flow_mag, motion_thresh=1, kernel=np.ones((7,7))):
 
     motion_mask = cv2.erode(motion_mask, kernel, iterations=1)
     motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, kernel, iterations=1)
-    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
     
     return motion_mask
 
@@ -1247,6 +1247,11 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         # Create an empty color image to display components
         colored_components = np.zeros((*moving_mask.shape, 3), dtype=np.uint8)
+    
+        kernel= np.ones((1,1))    
+        motion_mask = cv2.erode(moving_mask, kernel, iterations=1)
+        motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        moving_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
         # Assign a unique color to each label
         for label in range(
@@ -1286,7 +1291,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         #motion_thresh = np.c_[np.linspace(0.3, 1, 1080)].repeat(1920, axis=-1)
         
         # get motion mask
-        moving_mask = get_motion_mask(mag, motion_thresh=0.5)
+        #moving_mask = get_motion_mask(mag, motion_thresh=0.5)
         
                 # Display the moving mask
         cv2.imshow('Moving Mask Flow',
@@ -1294,7 +1299,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
 
         # Set pixels outside the moving mask to white
-        #flow_image_bev[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
+        flow_image_bev[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
 
         # Display the flow visualization
         cv2.imshow("Optical Flow Visualization",

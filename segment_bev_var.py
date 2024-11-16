@@ -19,9 +19,11 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dzhura/ComputerVision/data/4kStreetView Cctv.mp4'
+input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
+line1 = [[1132,11], [1210,843]]
+line2 = [[360,16], [503, 867]]
 
 
 class cv_colors(Enum):
@@ -163,7 +165,8 @@ def generate_perspective_matrix_leeds(img, roi_corners):
 
 def generate_perspective_matrix(ratio=0.5):
    
-    seeds = [[1, 508], [747, 235], [1401, 215], [1082, 701]]
+    #seeds = [[1, 508], [747, 245], [1401, 215], [1082, 701]]
+    seeds = [[1, 508], [747, 245], [1401, 115], [1082, 701]]
 
 
     widthA = np.sqrt(((seeds[3][0] - seeds[0][0]) ** 2) + ((seeds[3][1] - seeds[0][1]) ** 2))
@@ -1174,10 +1177,34 @@ def reenumerate_connected_labels(labels):
 
     return output_labels
 
+def adjust_points_to_collinear(center_bottom, center_top, int_bev):
+
+    # Calculate the direction vector from int_bev to the midpoint of center_bottom and center_top
+    midpoint = (center_bottom + center_top) / 2
+    direction = midpoint - int_bev
+
+    # Normalize the direction vector
+    direction_normalized = direction / np.linalg.norm(direction)
+
+    # Calculate the distances of center_bottom and center_top from int_bev along the direction
+    dist_bottom = np.dot(center_bottom - int_bev, direction_normalized)
+    dist_top = np.dot(center_top - int_bev, direction_normalized)
+
+    # Adjust the points to lie along the same line
+    adjusted_bottom = int_bev + direction_normalized * dist_bottom
+    adjusted_top = int_bev + direction_normalized * dist_top
+
+    return adjusted_bottom, adjusted_top
 
 def main(video_path, draw_boundaries=True, debug=False):
 
-    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.5)
+    ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.75)
+    
+    line1_bev = map_points_to_BEV(line1, ipm_matrix)
+    line2_bev = map_points_to_BEV(line2, ipm_matrix)
+    int_bev = get_intersect(line1_bev[0], line1_bev[1], line2_bev[0], line2_bev[1])
+    print(int_bev)
+    int_bev_iv = iv(int_bev)
 
     cap = cv2.VideoCapture(input_video_path)
     # Get video properties
@@ -1224,6 +1251,10 @@ def main(video_path, draw_boundaries=True, debug=False):
             prev_frame = next_frame
             #prev_bev = next_bev
             continue
+        if frame_count >  80:
+            prev_frame = next_frame
+            #prev_bev = next_bev
+            break
 
         #if frame_count % 2 != 0: continue
 
@@ -1243,7 +1274,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         ratio = 0.1
         blurred_diff = cv2.GaussianBlur(gray_diff, (5, 5), 0)
-        _, moving_mask = cv2.threshold(blurred_diff, 20, 255, cv2.THRESH_BINARY)
+        _, moving_mask = cv2.threshold(blurred_diff, 25, 255, cv2.THRESH_BINARY)
     
         #moving_mask = cv2.dilate(moving_mask, None, iterations=1)
         #moving_mask_bin = moving_mask // 255
@@ -1322,37 +1353,16 @@ def main(video_path, draw_boundaries=True, debug=False):
         contour_mask2 = slic2.getLabelContourMask(False)
         bev_output[0 < contour_mask1] = cv_colors.RED.value
         bev_output[0 < contour_mask2] = cv_colors.BLUE.value
-        #cv2.imshow("Countour mask", bev_image)
 
-        if False and debug:        
-            # labels1[moving_mask == 0] = 0 
-            # labels2[moving_mask == 0] = 0
-            # labels[moving_mask == 0] = 0 
-            # Convert labels to color images for visualization
-            # labels1_color = labels_to_color(labels1)
-            # labels2_color = labels_to_color(labels2)
-            labels_color = labels_to_color(labels)
-        
-            # Display each segmentation using cv2
-            # cv2.imshow("SLIC1 Segmentation", labels1_color)
-            # cv2.imshow("SLIC2 Segmentation", labels2_color)
-            cv2.imshow("Joint Segmentation", labels_color)
-        
-            # Print statistics
-            print("Number of unique labels in SLIC1:", np.unique(labels1).size)
-            print("Number of unique labels in SLIC2:", np.unique(labels2).size)
-            print("Number of unique labels in joint segmentation:", np.unique(labels).size)
-            print("Total labels in joint segmentation:", num_labels)
-        
-            # Wait until any key is pressed, then close all windows
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
-
-        # Apply connected components labeling to separate unconnected components
-        #num_labels, labels = cv2.connectedComponents(labels.astype(np.uint8), connectivity=8)
-
-        # Remove labels outside the moving mask by setting them to 0
-        #labels[moving_mask == 0] = 0  # Set areas outside the moving mask to label 0
+        #TODO Why?
+        height, width = next_frame.shape[:2]
+        alpha = 0.5
+        bev_output = cv2.addWeighted(next_bev.copy(), 1 - alpha, bev_output, alpha, 0)
+        segm_out = cv2.warpPerspective(bev_output, inv_mat, (width, height), flags=cv2.INTER_CUBIC)
+        segm_out = cv2.addWeighted(next_frame.copy(), 1 - alpha, segm_out, alpha, 0)
+        cv2.imshow("Countour mask", segm_out)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
         labels = reenumerate_connected_labels(labels)
         num_labels = np.max(labels)
@@ -1491,15 +1501,15 @@ def main(video_path, draw_boundaries=True, debug=False):
 
             bev_points_iv = to_iv(bev_points)
 
-            if False and debug:
+            if debug:
                 draw_bottom(bounding_box_image,
                             np.array(box_corners, dtype=np.int32),
                             color=cv_colors.BLUE.value,
                             thickness=2)
-                draw_bottom(bev_image,
+                draw_bottom(bev_output,
                             np.array(bev_points, dtype=np.int32),
                             color=cv_colors.BLUE.value,
-                            thickness=1)
+                            thickness=2)
 
             angle_radians = move_to_second_quadrant(-avg_flow_angle)
 
@@ -1545,8 +1555,10 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                     top = top[1:]
                     # TODO check if avg better
-                    x = max(x1, x2)
-                    y = max(y1, y2)
+                    # x = max(x1, x2)
+                    # y = max(y1, y2)
+                    x = (x1 + x2)/2
+                    y = (y1 + y2)/2
 
                     avg_bootom_iv, avg_corner_ind = compute_rectangle_points(
                         bottom_center_iv, angle_radians, y, x)
@@ -1557,6 +1569,9 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                     avg_bottom = to_iv(avg_bootom_iv)
                     avg_top = to_iv(avg_top_iv)
+
+                    # avg_bottom = bottom
+                    # avg_top = top
 
                     rot_bootom_iv, rot_corner_ind = compute_rectangle_points(
                         bottom_center_iv, 0, y, x)
@@ -1589,6 +1604,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                     # cv2.line(bounding_box_image, rot_lower_face[rot_corner_ind].astype("int"), rot_lower_face[(rot_corner_ind + 1) % 4].astype("int"), cv_colors.GREEN.value, 5)
                     # cv2.line(bev_image, rot_bottom[rot_corner_ind].astype("int"), rot_bottom[(rot_corner_ind + 1) % 4].astype("int"), cv_colors.GREEN.value, 5)
                     # cv2.line(bounding_box_image, avg_lower_face[avg_corner_ind].astype("int"), avg_upper_face[avg_corner_ind].astype("int"), cv_colors.BLUE.value, 5)
+                    
+                    bottom_center_iv, center_top_iv = adjust_points_to_collinear(bottom_center_iv, center_top_iv, int_bev_iv)
 
                     segment['height'] = height
                     segment['top_center'] = center_top_iv
@@ -1653,7 +1670,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                         avg_bottom.astype("int"),
                         avg_top.astype("int"),
                         color=cv2_color,  #cv_colors.ORANGE.value,
-                        thickness=1)
+                        thickness=2)
 
                     draw_cube(
                         bounding_box_image,
@@ -1700,12 +1717,14 @@ def main(video_path, draw_boundaries=True, debug=False):
         cv2.imshow('Bounding Boxes', resized_image)
 
         if cv2.waitKey(30) & 0xFF == 27:  # Esc key to stop
+            cv2.imwrite('BoundingBoxes.png', bounding_box_image)
             break
 
         # Call your function to draw cubes
         if debug:# and frame_count == 80:
             draw_cubes_in_3d(lower_faces, heights, colors)
 
+    cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources
     cap.release()
     out.release()

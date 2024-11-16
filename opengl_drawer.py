@@ -99,7 +99,7 @@ def draw_cubes_in_3d(lower_faces, heights, colors):
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
 
-        #ax.set_aspect('equal', adjustable='box')
+        ax.set_aspect('equal', adjustable='box')
         
         # Set the axis limits based on the data ranges
         #set_axes_limits(ax, lower_faces, heights)

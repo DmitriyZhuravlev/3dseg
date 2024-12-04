@@ -2,6 +2,14 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.pyplot as plt
 import numpy as np
 
+
+def generate_random_color():
+    """Generates a random color and returns it in both BGR (for cv2) and RGB (for plt) formats."""
+    color_rgb = np.random.randint(
+        0, 256, 3).tolist()  # Random RGB color in 0-255 range
+    color_bgr = color_rgb[::-1]  # Reverse for BGR format for cv2
+    color_rgb_normalized = [c / 255.0 for c in color_rgb]  # Normalize for plt
+    return color_bgr, color_rgb_normalized
 # def draw_3d_bounding_box(ax, lower_face, h, color="orange"):
     # lower_face = np.array(lower_face)
 

@@ -4,6 +4,7 @@ import os
 from opengl_drawer import *
 #from shapely.geometry import Polygon
 from shapely.geometry import LineString, Point, Polygon
+from scipy.spatial import ConvexHull
 import flowiz as fz
 
 from lifting import *
@@ -1526,148 +1527,68 @@ def bev_to_plain_view(bev_mask, inv_mat, image_size):
     plain_view_mask = cv2.warpPerspective(bev_mask.astype(np.int32), inv_mat, (w, h), flags=cv2.INTER_NEAREST)
     return plain_view_mask
 
-def find_tangent_points(mask, vp, direction):
-    """
-    Find tangent points on the mask for the given vanishing point.
+def find_tangent_points(mask_center, hull_points, vp):
 
-    Args:
-        mask: Binary mask in plain view (numpy array).
-        vp: Vanishing point [x, y].
-        direction: Direction of the tangent ("top", "bottom", "left", or "right").
+   # Step 3: Calculate the reference angle (line from VP to mask center)
+    ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
 
-    Returns:
-        Tangent point coordinates [x, y] and the tangent line equation in homogeneous coordinates.
-    """
+    # Step 4: Compute angles for all boundary points
+    tangent_candidates = []
+    for vertex in hull_points:
+        angle = np.arctan2(vertex[1] - vp[1], vertex[0] - vp[0])  # Angle from VP to vertex
+        angle_diff = angle - ref_angle
 
+        # Normalize angle difference to be in range [-π, π]
+        angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
 
-    # Convert mask to polygon (boundary outline)
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if len(contours) == 0:
-        raise ValueError("Mask has no non-zero regions.")
+        tangent_candidates.append((angle_diff, vertex))
+
+    # Step 5: Find the maximum positive and negative angle differences
+    positive_angle_candidate = max(tangent_candidates, key=lambda x: x[0])
+    negative_angle_candidate = min(tangent_candidates, key=lambda x: x[0])
+
+    pos_point = positive_angle_candidate[1]
+    neg_point = negative_angle_candidate[1]
+
+    # Step 6: Compute the tangent line equations in homogeneous coordinates
+    pos_line = np.cross([vp[0], vp[1], 1], [pos_point[0], pos_point[1], 1])
+    neg_line = np.cross([vp[0], vp[1], 1], [neg_point[0], neg_point[1], 1])
+
+    return pos_point, pos_line, neg_point, neg_line
     
-    # Extract the largest contour as the polygon
-    largest_contour = max(contours, key=cv2.contourArea)
-    polygon = Polygon(largest_contour.squeeze())
-
-    # Initialize variables to store the best tangent points
-    best_point = None
-    best_line = None
-
-    # Search for tangent points
-    for vertex in polygon.exterior.coords:
-        line = LineString([vp, vertex])  # Line from vanishing point to vertex
-        intersection = line.intersection(polygon)  # Check intersection with polygon
-
-        # Ensure the line is tangent: only one point of intersection
-        if isinstance(intersection, Point):  # Tangent if exactly one intersection point
-            x, y = vertex
-            value = y if direction in ["top", "bottom"] else x  # Sort based on direction
-
-            # Update best point based on direction
-            if best_point is None or (
-                (direction in ["top", "left"] and value > best_point[1 if direction == "top" else 0]) or
-                (direction in ["bottom", "right"] and value < best_point[1 if direction == "bottom" else 0])
-            ):
-                best_point = (x, y)
-                best_line = np.cross([x, y, 1], [vp[0], vp[1], 1])  # Line equation
-
-    # Return the tangent point and its line equation
-    if best_point is None:
-        raise ValueError("No tangent points found.")
-    return best_point, best_line
-    
-# def find_tangent_points(mask, vp, direction):
-    # """
-    # Find tangent points on the mask for the given vanishing point using OpenCV.
-
-    # Args:
-        # mask: Binary mask in plain view (numpy array).
-        # vp: Vanishing point [x, y].
-        # direction: Direction of the tangent ("top", "bottom", "left", or "right").
-
-    # Returns:
-        # Tangent point coordinates [x, y].
-    # """
-    # # Find contours of the mask
-    # contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # if not contours:
-        # raise ValueError("No contours found in the mask.")
-
-    # # Combine all contours into a single set of points
-    # contour_points = np.vstack([contour[:, 0, :] for contour in contours])  # Nx2 array
-
-    # # Compute the tangent points based on the direction
-    # if direction in ["top", "bottom"]:
-        # contour_points = sorted(contour_points, key=lambda p: p[1])  # Sort by y-coordinate
-    # elif direction in ["left", "right"]:
-        # contour_points = sorted(contour_points, key=lambda p: p[0])  # Sort by x-coordinate
-    # else:
-        # raise ValueError(f"Invalid direction '{direction}'. Use 'top', 'bottom', 'left', or 'right'.")
-
-    # # Select the point that satisfies the tangent condition
-    # tangent_point = contour_points[0] if direction in ["top", "left"] else contour_points[-1]
-
-    # # Compute the tangent line
-    # tangent_line = np.cross([tangent_point[0], tangent_point[1], 1], [vp[0], vp[1], 1])
-
-    # return tangent_point, tangent_line
-
-# def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp):
-    # """
-    # Compute the 3D bounding box using a plain-view binary mask and vanishing points.
-
-    # Args:
-        # mask: Binary mask in plain view (numpy array).
-        # vert_vp: Vertical vanishing point [x, y].
-        # hor_left_vp: Left horizontal vanishing point [x, y].
-        # hor_right_vp: Right horizontal vanishing point [x, y].
-
-    # Returns:
-        # Array of 8 corner points of the 3D box in plain-view coordinates.
-    # """
-    # # Step 1: Find tangent lines using mask pixels
-    # point_a, line1 = find_tangent_points(mask, hor_right_vp, direction="top")
-    # point_b, line2 = find_tangent_points(mask, vert_vp, direction="right")
-    # point_c, line3 = find_tangent_points(mask, vert_vp, direction="left")
-    # point_d, line4 = find_tangent_points(mask, hor_right_vp, direction="bottom")
-
-    # # Step 2: Compute intersections for corners
-    # def compute_intersection(line1, line2):
-        # """Compute the intersection of two lines in homogeneous coordinates."""
-        # inter = np.cross(line1, line2)
-        # if inter[2] != 0:
-            # return inter[:2] / inter[2]
-        # return None  # Parallel lines
-
-    # corner_a = compute_intersection(line1, line4)
-    # corner_c = compute_intersection(line2, line4)
-    # corner_b = compute_intersection(line1, line3)
-
-    # # Step 3: Find top face
-    # line5 = np.cross(corner_a, vert_vp)
-    # line6 = np.cross(corner_b, hor_right_vp)
-
-    # corner_d = compute_intersection(line5, line2)
-    # corner_f = compute_intersection(line6, line3)
-    # corner_e = compute_intersection(np.cross(corner_a, vert_vp), np.cross(corner_f, hor_right_vp))
-    # corner_g = compute_intersection(np.cross(corner_d, hor_right_vp), np.cross(corner_f, hor_left_vp))
-    # corner_h = compute_intersection(np.cross(corner_g, vert_vp), np.cross(corner_b, hor_left_vp))
-
-    # return np.array([corner_a, corner_b, corner_c, corner_d, corner_e, corner_f, corner_g, corner_h])
-
 
 def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
 
-    # Step 1: Find tangent lines using mask pixels
-    point_a, line1 = find_tangent_points(mask, hor_right_vp, direction="top")
-    point_b, line2 = find_tangent_points(mask, hor_right_vp, direction="bottom")
+    # Step 1: Extract non-zero points (boundary of the mask)
+    points = np.argwhere(mask > 0)  # Extract all non-zero pixel coordinates (row, col)
+    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
 
-    point_c, line3 = find_tangent_points(mask, vert_vp, direction="left")
-    point_d, line4 = find_tangent_points(mask, vert_vp, direction="right")
+    if len(points) < 3:
+        raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
+
+    # Step 2: Compute Convex Hull for a clean boundary
+    hull = ConvexHull(points)
+    hull_points = points[hull.vertices]
+    polygon = Polygon(hull_points)  # Create a polygon using the convex hull
+
+    # Step 3: Calculate the reference angle (line from VP to mask center)
+    mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
+    #ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
+    point_b, line2, point_a, line1 = find_tangent_points(mask_center, hull_points, hor_right_vp)
+    point_c, line3, point_d, line4 = find_tangent_points(mask_center, hull_points, vert_vp)
+    point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
+
+
+
+    # Step 1: Find tangent lines using mask pixels
+    # point_a, line1 = find_tangent_points(mask, hor_right_vp, direction="top")
+    # point_b, line2 = find_tangent_points(mask, hor_right_vp, direction="bottom")
+
+    # point_c, line3 = find_tangent_points(mask, vert_vp, direction="left")
+    # point_d, line4 = find_tangent_points(mask, vert_vp, direction="right")
     
-    point_e, line5 = find_tangent_points(mask, hor_left_vp, direction="bottom")
-    point_f, line6 = find_tangent_points(mask, hor_left_vp, direction="top")
+    # point_e, line5 = find_tangent_points(mask, hor_left_vp, direction="bottom")
+    # point_f, line6 = find_tangent_points(mask, hor_left_vp, direction="top")
 
 
     # Step 2: Compute intersections for corners
@@ -1714,72 +1635,62 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
     if debug:
         plt.imshow(mask, cmap='gray')  # Show the mask in the background
     
+        # Function to safely plot points
+        def plot_point(corner, color, label, marker='o'):
+            if corner is not None and len(corner) == 2:
+                plt.scatter(*corner, color=color, marker=marker, label=label)
+   
+        def draw_line_segment(vp, point, color):
+            if vp is not None and point is not None:
+                plt.plot([vp[0], point[0]], [vp[1], point[1]], color=color, linestyle="--") 
+  
+        # Plot tangent points
+        plot_point(point_a, 'red', "Tangent A")
+        plot_point(point_b, 'orange', "Tangent B")
+        plot_point(point_c, 'blue', "Tangent C")
+        plot_point(point_d, 'yellow', "Tangent D")
+        plot_point(point_e, 'purple', "Tangent E")
+        plot_point(point_f, 'gray', "Tangent F")
+    
+        # Plot tangent lines
+        draw_line_segment(hor_right_vp, point_a, 'red')
+        draw_line_segment(hor_right_vp, point_b, 'red')
+        draw_line_segment(vert_vp, point_c, 'blue')
+        draw_line_segment(vert_vp, point_d, 'blue')
+        draw_line_segment(hor_left_vp, point_e, 'green')
+        draw_line_segment(hor_left_vp, point_f, 'green')
+        # plot_point(corner_a, 'teal', "corner_a")
+        # plot_point(corner_c, 'green', "corner_c")
+        # plot_point(corner_b, 'yellow', "corner_b")
+
+
+    
         # Filter valid corners for visualization
         valid_corners = [corner for corner in corners if corner is not None]
         valid_corners1 = [corner for corner in corners1 if corner is not None]
     
-        # Check if we have enough valid corners to plot
-        if len(valid_corners) >= 3:  # Minimum for a closed polygon
-            x_coords, y_coords = zip(*valid_corners)
-            plt.plot(x_coords, y_coords, color='blue', linewidth=2, label='Down Tangent Polyline')
+        # # Check if we have enough valid corners to plot
+        # if len(valid_corners) >= 3:  # Minimum for a closed polygon
+            # x_coords, y_coords = zip(*valid_corners)
+            # plt.plot(x_coords, y_coords, color='blue', linewidth=2, label='Down Tangent Polyline')
             
-        if len(valid_corners1) >= 3:  # Minimum for a closed polygon
-            x_coords, y_coords = zip(*valid_corners1)
-            plt.plot(x_coords, y_coords, color='green', linewidth=2, label='Top Tangent Polyline')
+        # if len(valid_corners1) >= 3:  # Minimum for a closed polygon
+            # x_coords, y_coords = zip(*valid_corners1)
+            # plt.plot(x_coords, y_coords, color='green', linewidth=2, label='Top Tangent Polyline')
+
     
-            # # Optionally mark the corners
-            # corner_labels = ["A", "B", "H", "C", "A"][:len(valid_corners)]  # Dynamic labels
-            # for corner, label in zip(valid_corners, corner_labels):
-                # plt.scatter(corner[0], corner[1], color='red')
-                # plt.text(corner[0] + 5, corner[1] + 5, label, color='red')
-                
-            # for corner, label in zip(valid_corners1, corner_labels):
-                # plt.scatter(corner[0], corner[1], color='red')
-                # plt.text(corner[0] + 5, corner[1] + 5, label, color='green')
+        # Zoom into the mask region
+        rows, cols = np.where(mask)
+        if rows.size > 0 and cols.size > 0:
+            plt.xlim([cols.min() - 10, cols.max() + 10])
+            plt.ylim([rows.max() + 10, rows.min() - 10])  # Invert y-axis for correct orientation
     
-        # Show legend and plot
+        # Show legend and final plot
         plt.legend()
         plt.show()
-
-        # plt.pause(0.001)
         
-        # # print("Press any key to render new boxes...")
-        # # while True:
-            # # plt.pause(0.001)
-            # # if plt.waitforbuttonpress():
-                # # break  # Exit loop if a key is pressed
-
-    # # Step 3: Find top face
-    # line5 = np.cross(corner_a, vert_vp)
-    # line6 = np.cross(corner_b, hor_right_vp)
-
-    # corner_d = compute_intersection(line5, line2)
-    # corner_f = compute_intersection(line6, line3)
-    # corner_e = compute_intersection(np.cross(corner_a, vert_vp), np.cross(corner_f, hor_right_vp))
-    # corner_g = compute_intersection(np.cross(corner_d, hor_right_vp), np.cross(corner_f, hor_left_vp))
-    # corner_h = compute_intersection(np.cross(corner_g, vert_vp), np.cross(corner_b, hor_left_vp))
-
-    # if debug:
-        # # Draw the final lines and corners for the 3D box
-        # plt.imshow(mask, cmap='gray')
-        # plt.scatter(*vert_vp, color='blue', label='Vertical VP')
-        # plt.scatter(*hor_left_vp, color='red', label='Left Horizontal VP')
-        # plt.scatter(*hor_right_vp, color='green', label='Right Horizontal VP')
-
-        # # Plot the corners of the 3D box
-        # corners = [corner_a, corner_b, corner_c, corner_d, corner_e, corner_f, corner_g, corner_h]
-        # for corner in corners:
-            # plt.scatter(*corner, color='orange')
-
-        # # Plot lines between the corners to form the 3D box
-        # corners_pairs = [(corner_a, corner_b), (corner_b, corner_c), (corner_c, corner_d), (corner_d, corner_a),
-                         # (corner_e, corner_f), (corner_f, corner_g), (corner_g, corner_e), (corner_h, corner)
-                         # ]
-        # for (p1, p2) in corners_pairs:
-            # plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='black', lw=2)
-
-        # plt.legend()
-        # plt.show()
+    print([corner_a, corner_b, corner_h, corner_c])
+    print([corner_a1, corner_b1, corner_h1, corner_c1])
 
     return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
 
@@ -1837,14 +1748,14 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         print(f"Processing {frame_count} frame")
-        if frame_count < 75:
-            prev_frame = next_frame
-            #prev_bev = next_bev
-            continue
-        if frame_count >  80:
-            prev_frame = next_frame
-            #prev_bev = next_bev
-            break
+        # if frame_count < 75:
+            # prev_frame = next_frame
+            # #prev_bev = next_bev
+            # continue
+        # if frame_count >  80:
+            # prev_frame = next_frame
+            # #prev_bev = next_bev
+            # break
 
         #if frame_count % 2 != 0: continue
         
@@ -2088,7 +1999,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             lower_face, upper_face = None, None
             try:
                 # Compute 3D box
-                lower_face, upper_face = compute_3d_box_from_plain_mask(segment_mask, vert_vp, hor_left_vp, hor_right_vp)
+                lower_face, upper_face = compute_3d_box_from_plain_mask(segment_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
              
                 # Draw the 3D box
                 draw_cube(
@@ -2100,6 +2011,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                 #img_with_box = draw_3d_box(img_with_box, box_3d)
             except:
                 print(f"Error:")
+                continue
 
             #continue
 
@@ -2256,8 +2168,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        if debug:# and frame_count == 80:
-            draw_cubes_in_3d(lower_faces, heights, colors)
+        # if debug:# and frame_count == 80:
+            # draw_cubes_in_3d(lower_faces, heights, colors)
 
     cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

@@ -21,7 +21,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -1574,8 +1574,10 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
     # Step 3: Calculate the reference angle (line from VP to mask center)
     mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
     #ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
+    # TODO left, right ?
     point_b, line2, point_a, line1 = find_tangent_points(mask_center, hull_points, hor_right_vp)
-    point_c, line3, point_d, line4 = find_tangent_points(mask_center, hull_points, vert_vp)
+    point_d, line4, point_c, line3  = find_tangent_points(mask_center, hull_points, vert_vp)
+    # TODO check orientation
     point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
 
 
@@ -1600,8 +1602,8 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
         return None  # Parallel lines
 
     corner_a = compute_intersection(line1, line6)
-    corner_c = compute_intersection(line6, line4)
-    corner_b = compute_intersection(line1, line3)
+    corner_c = compute_intersection(line6, line3)
+    corner_b = compute_intersection(line4, line1)
     
     
     
@@ -1622,10 +1624,18 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
         corner_h = None
     
     
-    corner_c1 = compute_intersection(line4, line2)
-    corner_a1 = get_intersect(hor_left_vp, corner_c1, vert_vp, corner_a)
-    corner_b1 = compute_intersection(line5, line3)
+    # corner_c2 = compute_intersection(line2, line6)
+    # corner_b2 = compute_intersection(line1, line4)
+    # corner_h2 = corner_h
+    # corner_a2 = corner_a
+    
+    
+    corner_c1 = compute_intersection(line2, line3)
+    corner_a11 = get_intersect(hor_left_vp, corner_c1, vert_vp, corner_a)
+    corner_b1 = compute_intersection(line5, line4)
     corner_h1 = compute_intersection(line2, line5)
+    corner_a12 = get_intersect(hor_left_vp, corner_c1, hor_right_vp, corner_b1)
+    corner_a1 = ((corner_a11[0] + corner_a12[0])/2, (corner_a11[1] + corner_a12[1])/2)
    
     # Compile the list of corners (including `corner_a` again to close the loop)
     corners = [corner_a, corner_b, corner_h, corner_c, corner_a]
@@ -1645,12 +1655,22 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
                 plt.plot([vp[0], point[0]], [vp[1], point[1]], color=color, linestyle="--") 
   
         # Plot tangent points
-        plot_point(point_a, 'red', "Tangent A")
-        plot_point(point_b, 'orange', "Tangent B")
-        plot_point(point_c, 'blue', "Tangent C")
-        plot_point(point_d, 'yellow', "Tangent D")
-        plot_point(point_e, 'purple', "Tangent E")
-        plot_point(point_f, 'gray', "Tangent F")
+        # plot_point(point_a, 'red', "Tangent A")
+        # plot_point(point_b, 'orange', "Tangent B")
+        # plot_point(point_c, 'blue', "Tangent C")
+        # plot_point(point_d, 'yellow', "Tangent D")
+        # plot_point(point_e, 'purple', "Tangent E")
+        # plot_point(point_f, 'gray', "Tangent F")
+        
+        plot_point(corner_a, 'red', "corner a")
+        plot_point(corner_b, 'blue', "corner b")
+        plot_point(corner_c, 'green', "corner c")
+        plot_point(corner_h, 'yellow', "corner h")
+        
+        plot_point(corner_a1, 'red', "corner a1")
+        plot_point(corner_b1, 'blue', "corner b1")
+        plot_point(corner_c1, 'green', "corner c1")
+        plot_point(corner_h1, 'yellow', "corner h1")
     
         # Plot tangent lines
         draw_line_segment(hor_right_vp, point_a, 'red')
@@ -1748,14 +1768,14 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         print(f"Processing {frame_count} frame")
-        # if frame_count < 75:
-            # prev_frame = next_frame
-            # #prev_bev = next_bev
-            # continue
-        # if frame_count >  80:
-            # prev_frame = next_frame
-            # #prev_bev = next_bev
-            # break
+        if frame_count < 75:
+            prev_frame = next_frame
+            #prev_bev = next_bev
+            continue
+        if frame_count >  80:
+            prev_frame = next_frame
+            #prev_bev = next_bev
+            break
 
         #if frame_count % 2 != 0: continue
         
@@ -1831,8 +1851,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                    resize_to_match_height(flow_image_bev, screen_height))
         #cv2.waitKey(0)
 
-        region_size = 2*5*10  #200 #100 #15  #10#30
-        ruler = 2*5*10  #150 # 100 #20 #14
+        region_size = 2*5*10*5  #200 #100 #15  #10#30
+        ruler = 2*5*10*5  #150 # 100 #20 #14
 
         slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image_bev,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -1936,11 +1956,9 @@ def main(video_path, draw_boundaries=True, debug=False):
                     x_min, x_max = np.min(xs), np.max(xs)
                     y_min, y_max = np.min(ys), np.max(ys)
                     top_point = (xs[np.argmin(ys)], y_min)  # Top-most point
-                    bottom_point = (xs[np.argmax(ys)], y_max
-                                    )  # Bottom-most point
+                    bottom_point = (xs[np.argmax(ys)], y_max)  # Bottom-most point
                     left_point = (x_min, ys[np.argmin(xs)])  # Left-most point
-                    right_point = (x_max, ys[np.argmax(xs)]
-                                   )  # Right-most point
+                    right_point = (x_max, ys[np.argmax(xs)])  # Right-most point
 
                     # Extract the flow vectors inside the box
                     flow_in_box = smoothed_flow[mask]  # Flow vectors within the box
@@ -2025,10 +2043,10 @@ def main(video_path, draw_boundaries=True, debug=False):
                     avg_lower_face = lower_face
 
                     bev_length = np.linalg.norm(bottom_face[0] -
-                                                bottom_face[1])
+                                                bottom_face[-1])
                     # TODO adjust according to view angle
                     proj_length = np.linalg.norm(lower_face[0] -
-                                                upper_face[1])
+                                                upper_face[-1])
                     plain_height = np.linalg.norm(
                         avg_lower_face[0] -
                         avg_upper_face[1])
@@ -2069,8 +2087,6 @@ def main(video_path, draw_boundaries=True, debug=False):
                                     f"Segment {segment_label} is below neighbor segment {other_label} (which is above it)"
                                 )
 
-                                cv2_color = other_segment['cv2_color']
-                                plt_color = other_segment['plt_color']
 
                                 #assert rot_corner_ind == other_segment['corner_ind'], "Top and bottom corner should be the same"
 
@@ -2094,17 +2110,29 @@ def main(video_path, draw_boundaries=True, debug=False):
                                     continue
 
                                 # Generate the perspective transformation matrices
+                                print("pts:")
                                 print(pts1)
                                 print(pts2)
                                 loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                                
+                                # in the previous plane
                                 avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, loc_persp))
                                 #avg_bootom_iv = map_points_to_BEV(avg_lower_face, loc_persp)
 
                                 z = other_segment['z'] + other_segment['height']
+                                
+                                cv2_color = other_segment['cv2_color']
+                                plt_color = other_segment['plt_color']
 
                                 break
 
+                    if avg_top_iv is None or avg_bootom_iv is None:
+                        raise ValueError("Error: pts1 or pts2 is None.")
+                    
+                    if avg_top_iv.shape != (4, 2) or avg_bootom_iv.shape != (4, 2):
+                        raise ValueError(f"Invalid shape for points:\npts1: {avg_top_iv.shape}\npts2: {avg_bootom_iv.shape}")
+                        
+                    if np.isnan(avg_top_iv).any() or np.isnan(avg_bootom_iv).any():
+                        raise ValueError(f"Error: NaN detected in points:\npts1: {avg_top_iv}\npts2: {avg_bootom_iv}")
 
                     segment['top'] = avg_top_iv
                     segment['bottom'] = avg_bootom_iv
@@ -2168,8 +2196,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        # if debug:# and frame_count == 80:
-            # draw_cubes_in_3d(lower_faces, heights, colors)
+        if debug and len(lower_faces) > 1:# and frame_count == 80:
+            draw_cubes_in_3d(lower_faces, heights, colors)
 
     cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

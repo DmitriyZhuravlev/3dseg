@@ -1855,14 +1855,14 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         print(f"Processing {frame_count} frame")
-        # if frame_count < 75:
-            # prev_frame = next_frame
-            # #prev_bev = next_bev
-            # continue
-        # if frame_count >  80:
-            # prev_frame = next_frame
-            # #prev_bev = next_bev
-            # break
+        if frame_count < 75 - 20:
+            prev_frame = next_frame
+            #prev_bev = next_bev
+            continue
+        if frame_count >  80 + 20:
+            prev_frame = next_frame
+            #prev_bev = next_bev
+            break
             
         height, width = next_frame.shape[:2]
         resized_frame = cv2.resize(next_frame, (width // 2, height // 2), interpolation=cv2.INTER_AREA)
@@ -2009,6 +2009,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                         'right_point': right_point,
                         'plain_mask' : mask,
                         'mask_center': mask_center,
+                        'lower_face' : None,
+                        
                         #'mask': mask,
                         'height': None,  # Store the height of the segment
                         'bottom_center': None,  # check IV
@@ -2030,18 +2032,6 @@ def main(video_path, draw_boundaries=True, debug=False):
         
         # Process each segment and check rays for all points
         for i, segment in enumerate(segments):
-            # j = is_segment_occluded(camera_position, segment, segments[:i])
-        
-            # if j is not None:
-                # # Occluded: Use the color of the occluding segment
-                # # current_color = segment_colors[occluding_label]
-                # cv2_color = segments[j]['cv2_color']
-                # plt_color = segments[j]['plt_color']
-            # else:
-                # # Not occluded: Generate a new color
-                # cv2_color, plt_color = generate_random_color()
-                # #segment_colors[segment['label']] = (cv2_color, plt_color)
-            cv2_color, plt_color = generate_random_color()
             # Draw the segment with the assigned color
             lower_face, upper_face = None, None
             segment_mask = segment['plain_mask']
@@ -2062,7 +2052,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                 #print(f"Error processing segment {segment_label}: {e}")
                 continue
 
-            continue
+            #continue
 
             if lower_face is not None and upper_face is not None:
                 if True:
@@ -2088,124 +2078,59 @@ def main(video_path, draw_boundaries=True, debug=False):
                     segment['height'] = height
                     segment['lower_face'] = avg_lower_face
                     segment['upper_face'] = avg_upper_face
-                    
-                    avg_top_iv = to_iv(top_face)
-                    avg_bootom_iv = to_iv(bottom_face)
-                    avg_bottom = bottom_face
-                    avg_top = top_face
-                    
 
 
-                    z = 0
-
-                    # Loop through earlier segments (which are below in the image)
-                    for j, other_segment in enumerate(segments[:i]):
-                        other_label = other_segment['label']
-                        if other_label == segment_label:
-                            continue
-                        # other_top = other_segment['top']
-                        # other_bottom = other_segment['bottom']
-
-                        # Check if other_segment is a neighbor of segment
-                        if other_label in neighbors_dict[segment_label]:
-                            relative_positions = neighbors_dict[segment_label][
-                                other_label]
-
-                            if ('bottom' in relative_positions
-                                    or 'bottom-left' in relative_positions
-                                    or 'bottom-right' in relative_positions):
-                                print(
-                                    f"Segment {segment_label} is below neighbor segment {other_label} (which is above it)"
-                                )
-                                break
-
-                                #assert rot_corner_ind == other_segment['corner_ind'], "Top and bottom corner should be the same"
-
-                                pts1 = np.float32(other_segment['upper_face'])   
-                                pts2 = np.float32(to_iv(other_segment['bottom']))
-
-                                if pts1 is None or pts2 is None:
-                                    print("Error: pts1 or pts2 is None.")
-                                    continue
-                                
-                                if pts1.shape != (4, 2) or pts2.shape != (4, 2):
-                                    print(f"Invalid shape for points:\npts1: {pts1.shape}\npts2: {pts2.shape}")
-                                    continue
-                                    
-                                if np.isnan(pts1).any() or np.isnan(pts2).any():
-                                    print(f"Error: NaN detected in points:\npts1: {pts1}\npts2: {pts2}")
-                                    continue
-                                
-                                if np.isinf(pts1).any() or np.isinf(pts2).any():
-                                    print(f"Error: Infinite values detected in points:\npts1: {pts1}\npts2: {pts2}")
-                                    continue
-
-                                # Generate the perspective transformation matrices
-                                print("pts:")
-                                print(pts1)
-                                print(pts2)
-                                loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                                # in the previous plane
-                                avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, loc_persp))
-                                #avg_bootom_iv = map_points_to_BEV(avg_lower_face, loc_persp)
-
-                                z = other_segment['z'] + other_segment['height']
-                                
-                                cv2_color = other_segment['cv2_color']
-                                plt_color = other_segment['plt_color']
-
-                                break
-
-                    if avg_top_iv is None or avg_bootom_iv is None:
-                        raise ValueError("Error: pts1 or pts2 is None.")
-                    
-                    if avg_top_iv.shape != (4, 2) or avg_bootom_iv.shape != (4, 2):
-                        raise ValueError(f"Invalid shape for points:\npts1: {avg_top_iv.shape}\npts2: {avg_bootom_iv.shape}")
-                        
-                    if np.isnan(avg_top_iv).any() or np.isnan(avg_bootom_iv).any():
-                        raise ValueError(f"Error: NaN detected in points:\npts1: {avg_top_iv}\npts2: {avg_bootom_iv}")
-
-                    segment['top'] = avg_top_iv
-                    segment['bottom'] = avg_bootom_iv
-                    segment['cv2_color'] = cv2_color
-                    segment['plt_color'] = plt_color
-
-                    draw_cube(
-                        bev_output,
-                        avg_bottom.astype("int"),
-                        avg_top.astype("int"),
-                        color=cv2_color,  #cv_colors.ORANGE.value,
-                        thickness=2)
-
-                    draw_cube(
-                        bounding_box_image,
-                        avg_lower_face.astype("int"),
-                        avg_upper_face.astype("int"),
-                        color=cv2_color,  #cv_colors.ORANGE.value,
-                        thickness=2)
+        for i, segment in enumerate(segments):
+            
 
 
-                    segment['z'] = z
-                    #Extend avg_upper_face by adding height to each point
-                    avg_bottom_3d = []
-                    for point in avg_bootom_iv:
-                        x_2d, y_2d = point
-                        avg_bottom_3d.append(
-                            [x_2d, y_2d, z])  # Add height as the third coordinate
+            z = 0
 
-                    avg_bottom_3d = np.array(
-                        avg_bottom_3d)  # Convert to a NumPy array if needed
-                    #segment['bottom'] = avg_bottom
+            segment_label =  segment['label']
+            avg_lower_face = segment['lower_face']
+            avg_upper_face = segment['upper_face']
+            #cv2_color = labels_to_color(segment_label)
+            cv2_color, plt_color = generate_random_color()
+            # Loop through earlier segments (which are below in the image)
+            for j, other_segment in enumerate(segments[:i]):
+                other_label = other_segment['label']
+                if other_label == segment_label:
+                    continue
+                # other_top = other_segment['top']
+                # other_bottom = other_segment['bottom']
 
-                    #Collect lower and upper faces for 3D rendering
-                    if len(avg_bottom_3d) == 4:
-                        lower_faces.append(
-                            avg_bottom_3d
-                        )  # Lower face remains 2D (or use zeros for Z if required)
-                        heights.append(height)  # Now a 3D face
-                        colors.append(plt_color)
+                # Check if other_segment is a neighbor of segment
+                if other_label in neighbors_dict[segment_label]:
 
-        out.write(bounding_box_image)
+                     other_upper_face = other_segment['upper_face']
+                     if avg_lower_face is not None and other_upper_face is not None:
+                         if faces_overlap(avg_lower_face, other_upper_face):
+                             cv2_color = other_segment['cv2_color']
+                             plt_color = other_segment['plt_color']
+
+                             break
+
+            # segment['top'] = avg_top_iv
+            # segment['bottom'] = avg_bootom_iv
+            segment['cv2_color'] = cv2_color
+            # segment['plt_color'] = plt_color
+
+            # draw_cube(
+                # bev_output,
+                # avg_bottom.astype("int"),
+                # avg_top.astype("int"),
+                # color=cv2_color,  #cv_colors.ORANGE.value,
+                # thickness=2)
+            if avg_lower_face is not None and avg_upper_face is not None:
+                draw_cube(
+                bounding_box_image,
+                avg_lower_face.astype("int"),
+                avg_upper_face.astype("int"),
+                color=cv2_color,  #cv_colors.ORANGE.value,
+                thickness=2)
+
+
+        out.write(img_with_box)
         resized_image = resize_to_match_height(bounding_box_image,
                                                screen_height)
         prev_frame = next_frame

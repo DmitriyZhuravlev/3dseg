@@ -12,6 +12,8 @@ from enum import Enum
 
 import os
 
+
+
 # Define your capture source and output directory
 output_dir = "output_frames"
 output_bev_dir = "output_bev_frames"
@@ -21,7 +23,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -445,13 +447,33 @@ def compute_optical_flow1(prev_frame, next_frame):
                                         3, 5, 1.2, 0)
     return flow
 
+# def compute_optical_flow(prev_frame, next_frame):
+    # prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    # next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
+    
+    # # Preprocess with bilateral filter for edge preservation
+    # prev_gray = cv2.bilateralFilter(prev_gray, d=5, sigmaColor=50, sigmaSpace=50)
+    # next_gray = cv2.bilateralFilter(next_gray, d=5, sigmaColor=50, sigmaSpace=50)
+
+    # # Calculate optical flow with fine-tuned parameters
+    # flow = cv2.calcOpticalFlowFarneback(prev_gray, next_gray, None,
+                                        # pyr_scale=0.5,   # pyramid scale
+                                        # levels=5,        # pyramid levels
+                                        # winsize=21,      # window size
+                                        # iterations=5,    # iterations per level
+                                        # poly_n=7,        # neighborhood size
+                                        # poly_sigma=1.5,  # standard deviation
+                                        # flags=0)
+    # return flow
+
+
 def compute_optical_flow(prev_frame, next_frame):
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
     next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
     
     # Preprocess with bilateral filter for edge preservation
-    prev_gray = cv2.bilateralFilter(prev_gray, d=5, sigmaColor=50, sigmaSpace=50)
-    next_gray = cv2.bilateralFilter(next_gray, d=5, sigmaColor=50, sigmaSpace=50)
+    # prev_gray = cv2.bilateralFilter(prev_gray, d=5, sigmaColor=50, sigmaSpace=50)
+    # next_gray = cv2.bilateralFilter(next_gray, d=5, sigmaColor=50, sigmaSpace=50)
 
     # Calculate optical flow with fine-tuned parameters
     flow = cv2.calcOpticalFlowFarneback(prev_gray, next_gray, None,
@@ -462,8 +484,73 @@ def compute_optical_flow(prev_frame, next_frame):
                                         poly_n=7,        # neighborhood size
                                         poly_sigma=1.5,  # standard deviation
                                         flags=0)
-    return flow
 
+    # Identify areas where velocity > 0 (valid flow regions)
+    magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    valid_mask = magnitude > 1e-2  # Threshold for motion presence
+
+    # Invert the mask to find holes
+    holes_mask = ~valid_mask
+
+    # Fill holes using a blur-based approach
+    flow_filled = fill_holes_with_blur(flow, holes_mask)
+
+    return flow_filled
+
+
+def fill_holes_with_blur(flow, holes_mask, blur_kernel=(551, 551)):
+    """
+    Fill holes in the flow field using a blur operation.
+
+    Args:
+        flow (ndarray): Optical flow field of shape (H, W, 2).
+        holes_mask (ndarray): Binary mask of holes where flow needs to be filled.
+        blur_kernel (tuple): Kernel size for the blur (e.g., (15, 15)).
+
+    Returns:
+        ndarray: Flow field with holes filled.
+    """
+    # Separate x and y components of the flow
+    flow_x, flow_y = flow[..., 0], flow[..., 1]
+
+    # Apply Gaussian blur to the entire flow components
+    blurred_x = cv2.GaussianBlur(flow_x, blur_kernel, 0)
+    blurred_y = cv2.GaussianBlur(flow_y, blur_kernel, 0)
+
+    # Combine masks for each flow component
+    filled_x = np.where(holes_mask, blurred_x, flow_x)
+    filled_y = np.where(holes_mask, blurred_y, flow_y)
+
+    # Stack x and y components back together
+    flow_filled = np.stack([filled_x, filled_y], axis=-1)
+
+    return flow_filled
+
+def fill_holes_with_border_value(flow, holes_mask):
+    """
+    Fill holes in the flow field using the values from the border of the hole.
+    
+    Args:
+        flow (ndarray): Optical flow field of shape (H, W, 2).
+        holes_mask (ndarray): Binary mask of holes where flow needs to be filled.
+    
+    Returns:
+        ndarray: Flow field with holes filled.
+    """
+    # Create a mask for valid flow regions (inverse of holes_mask)
+    valid_mask = ~holes_mask
+
+    # Separate x and y components of the flow
+    flow_x, flow_y = flow[..., 0], flow[..., 1]
+
+    # Fill holes for x and y components independently
+    flow_x_filled = cv2.inpaint(flow_x.astype(np.float32), holes_mask.astype(np.uint8), inpaintRadius=30, flags=cv2.INPAINT_TELEA)
+    flow_y_filled = cv2.inpaint(flow_y.astype(np.float32), holes_mask.astype(np.uint8), inpaintRadius=30, flags=cv2.INPAINT_TELEA)
+
+    # Combine filled x and y components back into a single flow field
+    flow_filled = np.stack([flow_x_filled, flow_y_filled], axis=-1)
+
+    return flow_filled
 
 def mark_boundaries(image,
                     labels,
@@ -601,95 +688,6 @@ def find_neighbors_within_mask(labels, e=10):
                         direction)
 
     return neighbors_dict
-
-
-# def find_neighbors(image, labels, e = 1):
-# # Initialize the dictionary with each unique label
-# neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
-
-# # Iterate through each pixel in the labels array
-# for y in range(labels.shape[0]):
-# for x in range(labels.shape[1]):
-# current_label = labels[y, x]
-
-# # Define neighbor pixel offsets in (y, x) format
-# neighbors = {
-# 'top': (y - e, x),
-# 'bottom': (y + e, x),
-# 'left': (y, x - e),
-# 'right': (y, x + e),
-# 'top-left': (y - e, x - e),
-# 'top-right': (y - e, x + e),
-# 'bottom-left': (y + e, x - e),
-# 'bottom-right': (y + e, x + e),
-# }
-
-# # Iterate through the neighboring directions
-# for direction, (ny, nx) in neighbors.items():
-# # Skip neighbors that are out of bounds
-# if ny < 0 or ny >= labels.shape[0] or nx < 0 or nx >= labels.shape[1]:
-# continue
-
-# neighbor_label = labels[ny, nx]
-
-# # Only add if neighbor label is different from current label
-# if neighbor_label != current_label:
-# if neighbor_label not in neighbors_dict[current_label]:
-# neighbors_dict[current_label][neighbor_label] = set()
-
-# # Record the direction of this neighbor relative to current label
-# neighbors_dict[current_label][neighbor_label].add(direction)
-
-# return neighbors_dict
-
-# def find_neighbors(image, labels, e=50):
-# # Initialize the dictionary with each unique label
-# neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
-
-# # Iterate through each unique label to find its neighbors
-# unique_labels = np.unique(labels)
-# for label in unique_labels:
-# # Get the mask for the current label
-# label_mask = (labels == label).astype(np.uint8)
-
-# # Find the bounding box around the current label mask to limit the search area
-# y_coords, x_coords = np.where(label_mask)
-# y_min, y_max = max(np.min(y_coords) - e, 0), min(np.max(y_coords) + e + 1, labels.shape[0])
-# x_min, x_max = max(np.min(x_coords) - e, 0), min(np.max(x_coords) + e + 1, labels.shape[1])
-
-# # Create a neighborhood mask within the epsilon range
-# for y in range(y_min, y_max):
-# for x in range(x_min, x_max):
-# neighbor_label = labels[y, x]
-# if neighbor_label != label:
-# # Determine relative position
-# dy, dx = y - y_coords.mean(), x - x_coords.mean()
-# direction = None
-# if dy < -e / 2 and dx < -e / 2:
-# direction = 'top-left'
-# elif dy < -e / 2 and dx > e / 2:
-# direction = 'top-right'
-# elif dy > e / 2 and dx < -e / 2:
-# direction = 'bottom-left'
-# elif dy > e / 2 and dx > e / 2:
-# direction = 'bottom-right'
-# elif dy < -e / 2:
-# direction = 'top'
-# elif dy > e / 2:
-# direction = 'bottom'
-# elif dx < -e / 2:
-# direction = 'left'
-# elif dx > e / 2:
-# direction = 'right'
-
-# if direction:
-# # Initialize neighbor entry if not already present
-# if neighbor_label not in neighbors_dict[label]:
-# neighbors_dict[label][neighbor_label] = set()
-# # Add the direction of this neighbor relative to current label
-# neighbors_dict[label][neighbor_label].add(direction)
-
-# return neighbors_dict
 
 
 def color_segments(image, labels):
@@ -1131,22 +1129,6 @@ def flow_to_image(flow):
     return flow_image_bev
 
 
-# # Utility function to check face overlap in BEV
-# def faces_overlap(face1, face2):
-# # TODO that is not true
-# """ Check if two faces overlap in the image or BEV space """
-# # Simple overlap condition: check bounding box intersection for the two faces
-# # x_min1, x_max1 = np.min(face1[:, 0]), np.max(face1[:, 0])
-# # y_min1, y_max1 = np.min(face1[:, 1]), np.max(face1[:, 1])
-# # x_min2, x_max2 = np.min(face2[:, 0]), np.max(face2[:, 0])
-# # y_min2, y_max2 = np.min(face2[:, 1]), np.max(face2[:, 1])
-
-# # return not (x_max1 < x_min2 or x_min1 > x_max2 or y_max1 < y_min2 or y_min1 > y_max2)
-# p1 = Polygon([(rect1[0],rect1[1]), (rect1[1],rect1[1]),(rect1[2],rect1[3]),(rect1[2],rect1[1])])
-# p2 = Polygon([(rect2[0],rect2[1]), (rect2[1],rect2[1]),(rect2[2],rect2[3]),(rect2[2],rect2[1])])
-# return(p1.intersects(p2))
-
-
 # Utility function to check face overlap in BEV
 def faces_overlap(face1, face2):
     """
@@ -1166,28 +1148,6 @@ def faces_overlap(face1, face2):
     # Check if the polygons intersect (overlap)
     return p1.intersects(p2)
 
-
-# def faces_overlap(face1, face2, epsilon=10.0):
-# """
-# Check if two faces overlap in the BEV or image space, with optional epsilon proximity.
-
-# Parameters:
-# - face1, face2: Arrays of four corner points for each face, formatted as [(x, y), ...].
-# - epsilon: Distance buffer around each polygon for proximity overlap.
-
-# Returns:
-# - True if the faces overlap or are within epsilon distance, False otherwise.
-# """
-# # Define polygons for each face based on the corner points
-# p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
-# p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
-
-# # Apply the epsilon buffer to both polygons
-# p1_buffered = p1.buffer(epsilon)
-# p2_buffered = p2.buffer(epsilon)
-
-# # Check if the buffered polygons intersect
-# return p1_buffered.intersects(p2_buffered)
 
 
 def combined_segmentation(next_frame, flow, region_size, ruler,
@@ -1569,7 +1529,7 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
     # Step 2: Compute Convex Hull for a clean boundary
     hull = ConvexHull(points)
     hull_points = points[hull.vertices]
-    polygon = Polygon(hull_points)  # Create a polygon using the convex hull
+    #polygon = Polygon(hull_points)  # Create a polygon using the convex hull
 
     # Step 3: Calculate the reference angle (line from VP to mask center)
     mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
@@ -1714,6 +1674,37 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
 
     return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
 
+# def fill_holes_with_boundary_color(flow_image_bev):
+    # # Convert the flow image to grayscale for hole detection
+    # gray = cv2.cvtColor(flow_image_bev, cv2.COLOR_BGR2GRAY)
+    
+    # # Create a binary mask of the segmented regions
+    # _, binary_mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+    
+    # # Invert the binary mask to detect holes (background becomes foreground)
+    # inverted_mask = cv2.bitwise_not(binary_mask)
+    
+    # # Perform flood-fill to find holes
+    # height, width = binary_mask.shape
+    # flood_filled = inverted_mask.copy()
+    # cv2.floodFill(flood_filled, np.zeros((height + 2, width + 2), np.uint8), (0, 0), 255)
+    
+    # # Invert flood-filled result to get only the holes
+    # holes = cv2.bitwise_not(flood_filled) & inverted_mask
+
+    # # Assign boundary color to holes
+    # for label in np.unique(flow_image_bev):
+        # # Create a mask for the current label
+        # region_mask = (flow_image_bev == label).astype(np.uint8)
+        # # Find the color of the label
+        # boundary_color = label
+        
+        # # Fill the holes within this label
+        # flow_image_bev[holes & region_mask] = boundary_color
+
+    # return flow_image_bev
+
+
 def main(video_path, draw_boundaries=True, debug=False):
 
     ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.75)
@@ -1732,6 +1723,8 @@ def main(video_path, draw_boundaries=True, debug=False):
     fps = cap.get(cv2.CAP_PROP_FPS) // 2
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    camera_position = (width/2, height)
+
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
@@ -1776,6 +1769,14 @@ def main(video_path, draw_boundaries=True, debug=False):
             prev_frame = next_frame
             #prev_bev = next_bev
             break
+            
+        height, width = next_frame.shape[:2]
+        resized_frame = cv2.resize(next_frame, (width // 2, height // 2), interpolation=cv2.INTER_AREA)
+        
+        # Save the resized frame
+        frame_filename = os.path.join(output_dir, f"frame_{frame_count:04d}.png")
+        cv2.imwrite(frame_filename, resized_frame)  # Save resized frame
+        print(f"Saved resized frame {frame_count} to {frame_filename}")
 
         #if frame_count % 2 != 0: continue
         
@@ -1805,7 +1806,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         _, moving_mask = cv2.threshold(blurred_diff, 25, 255, cv2.THRESH_BINARY)
     
         #moving_mask = cv2.dilate(moving_mask, None, iterations=1)
-        #moving_mask_bin = moving_mask // 255
+        moving_mask_bin = moving_mask // 255
         # Get connected components within the mask
         num_labels, labels = cv2.connectedComponents(moving_mask)
 
@@ -1839,10 +1840,10 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         # Compute optical flow and warp it to BEV
         flow_bev = compute_optical_flow(prev_bev, next_bev)
-        smoothed_flow = (previous_flow_bev + flow_bev) / 2  # Adjust to average over more frames if needed
+        smoothed_flow = flow_bev #(previous_flow_bev + flow_bev) / 2  # Adjust to average over more frames if needed
         #flow_image_bev = flow_to_image(flow)
         flow_image_bev = fz.convert_from_flow(smoothed_flow)
-
+        
         # Set pixels outside the moving mask to white
         #flow_image_bev[moving_mask == 0] = cv_colors.WHITE.value  #[255, 255, 255]
 
@@ -1851,8 +1852,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                    resize_to_match_height(flow_image_bev, screen_height))
         #cv2.waitKey(0)
 
-        region_size = 2*5*10*5  #200 #100 #15  #10#30
-        ruler = 2*5*10*5  #150 # 100 #20 #14
+        region_size = 2*5*10  #200 #100 #15  #10#30
+        ruler = 2*5*10  #150 # 100 #20 #14
 
         slic1 = cv2.ximgproc.createSuperpixelSLIC(flow_image_bev,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -1895,6 +1896,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         labels = reenumerate_connected_labels(labels)
         plain_labels = bev_to_plain_view(labels, inv_mat, next_frame.shape[:2])
         num_labels = np.max(labels)
+        
+        #labels = labels * moving_mask_bin
         # Debug visualization (optional)
         if debug:
             labels_combined_color = labels_to_color(plain_labels)
@@ -1949,7 +1952,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             # Calculate the percentage of moving pixels in this component
             moving_percentage = moving_pixels_in_component / total_component_pixels
 
-            if moving_percentage >= 0.5:
+            if moving_percentage >= 0.3:
                 # Find the bounding box for the current segment
                 ys, xs = np.where(mask)
                 if xs.size > 0 and ys.size > 0:
@@ -1964,6 +1967,23 @@ def main(video_path, draw_boundaries=True, debug=False):
                     flow_in_box = smoothed_flow[mask]  # Flow vectors within the box
                     # Compute the average flow vector in the box
                     avg_flow_vector = np.mean(flow_in_box, axis=0)
+                    
+                    # Step 1: Extract non-zero points (boundary of the mask)
+                    plain_mask = (plain_labels == label)
+                    points = np.argwhere(plain_mask > 0)  # Extract all non-zero pixel coordinates (row, col)
+                    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
+                
+                    if len(points) < 3:
+                        continue
+                        #raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
+                
+                    # Step 2: Compute Convex Hull for a clean boundary
+                    #hull = ConvexHull(points)
+                    #hull_points = points[hull.vertices]
+                    #polygon = Polygon(hull_points)  # Create a polygon using the convex hull
+                
+                    # Step 3: Calculate the reference angle (line from VP to mask center)
+                    mask_center = np.mean(points, axis=0)
 
                     # Store segment data (bounding box, mask, etc.)
                     segments.append({
@@ -1973,6 +1993,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                         'bottom_point': bottom_point,
                         'left_point': left_point,
                         'right_point': right_point,
+                        'plain_mask' : (plain_labels == label),
+                        'mask_center': mask_center,
                         #'mask': mask,
                         'height': None,  # Store the height of the segment
                         'bottom_center': None,  # check IV
@@ -1986,9 +2008,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                     })
 
         # Sort segments by their vertical position (y_min), bottom to top
-        segments = sorted(segments,
-                          key=lambda s: (s['bottom_point'], s['top_point']),
-                          reverse=True)
+        segments = sorted(segments, key=lambda s: np.linalg.norm(np.array(s['mask_center']) - camera_position))
 
         for i, segment in enumerate(segments):
             segment_label = segment['label']
@@ -2012,7 +2032,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                            [x_max, y_max]]
                            
             #segment_mask = plain_labels = segment['mask']
-            segment_mask = (plain_labels == segment_label)
+            segment_mask = segment["plain_mask"]#(plain_labels == segment_label)
             
             lower_face, upper_face = None, None
             try:
@@ -2086,7 +2106,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                                 print(
                                     f"Segment {segment_label} is below neighbor segment {other_label} (which is above it)"
                                 )
-
+                                break
 
                                 #assert rot_corner_ind == other_segment['corner_ind'], "Top and bottom corner should be the same"
 
@@ -2195,9 +2215,9 @@ def main(video_path, draw_boundaries=True, debug=False):
             cv2.imwrite('BoundingBoxes.png', bounding_box_image)
             break
 
-        # Call your function to draw cubes
-        if debug and len(lower_faces) > 1:# and frame_count == 80:
-            draw_cubes_in_3d(lower_faces, heights, colors)
+        # # Call your function to draw cubes
+        # if debug and len(lower_faces) > 1:# and frame_count == 80:
+            # draw_cubes_in_3d(lower_faces, heights, colors)
 
     cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

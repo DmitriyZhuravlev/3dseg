@@ -22,9 +22,25 @@ os.makedirs(output_dir, exist_ok=True)
 input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
+# vertical vp
 line1 = [[1132,11], [1210,843]]
 line2 = [[360,16], [503, 867]]
 
+# left horizontal vp 
+line3 = [[183, 545], [772, 645]]
+line4 = [[429, 427], [1094, 443]]
+
+# right horizontal vp 
+line5 = [[1170, 385], [1206, 348]]
+line6 = [[1140, 83], [1213, 96]]
+
+
+# Define input lines as NumPy arrays
+lines = {
+    "vertical_lines": np.array([[[1132, 11], [1210, 843]], [[360, 16], [503, 867]]]),
+    "left_hor_lines": np.array([[[183, 545], [772, 645]], [[429, 427], [1094, 443]]]),
+    "right_hor_lines": np.array([[[1170, 385], [1206, 348]], [[1140, 83], [1213, 96]]]),
+}
 
 class cv_colors(Enum):
     RED = (0, 0, 255)
@@ -51,6 +67,63 @@ region_size = 70  #200 #100 #15  #10#30
 ruler = 60  #150 # 100 #20 #14
 slic_iterations = 10
 
+
+def compute_intersection(line1, line2):
+    """
+    Compute the intersection of two lines.
+    Args:
+        line1: [[x1, y1], [x2, y2]] (two points defining the first line).
+        line2: [[x1, y1], [x2, y2]] (two points defining the second line).
+    Returns:
+        Intersection point [x, y] or None if lines are parallel.
+    """
+    l1 = np.cross([line1[0][0], line1[0][1], 1], [line1[1][0], line1[1][1], 1])
+    l2 = np.cross([line2[0][0], line2[0][1], 1], [line2[1][0], line2[1][1], 1])
+    intersection = np.cross(l1, l2)
+    if intersection[2] == 0:
+        return None  # Parallel lines
+    return [intersection[0] / intersection[2], intersection[1] / intersection[2]]
+
+
+# Compute vanishing points
+vert_vp = compute_intersection(lines["vertical_lines"][0], lines["vertical_lines"][1])
+hor_left_vp = compute_intersection(lines["left_hor_lines"][0], lines["left_hor_lines"][1])
+hor_right_vp = compute_intersection(lines["right_hor_lines"][0], lines["right_hor_lines"][1])
+
+
+def draw_3d_grid(image, vert_vp, hor_left_vp, hor_right_vp, grid_size=10):
+    """
+    Draw a 3D grid on an image using the provided vanishing points.
+    Args:
+        image: Input image to draw on.
+        vert_vp: Vertical vanishing point [x, y].
+        hor_left_vp: Left horizontal vanishing point [x, y].
+        hor_right_vp: Right horizontal vanishing point [x, y].
+        grid_size: Number of grid lines to draw.
+    Returns:
+        Image with the 3D grid drawn.
+    """
+    h, w, _ = image.shape
+    grid_image = image.copy()
+
+    # Bottom edge of the frame (assume as ground plane)
+    bottom_line = [[0, h], [w, h]]
+
+    # Draw vertical lines converging to the vertical vanishing point
+    for i in np.linspace(0, w, grid_size):
+        line_start = [i, h]  # Start from the bottom
+        line_end = vert_vp   # Converge to the vertical vanishing point
+        cv2.line(grid_image, tuple(map(int, line_start)), tuple(map(int, line_end)), (0, 255, 0), 1)
+
+    # Draw horizontal lines converging to left and right horizontal vanishing points
+    for j in np.linspace(0, h, grid_size):
+        line_start = [0, j]  # From left to the horizontal VP
+        cv2.line(grid_image, tuple(map(int, line_start)), tuple(map(int, hor_left_vp)), (255, 0, 0), 1)
+
+        line_start = [w, j]  # From right to the horizontal VP
+        cv2.line(grid_image, tuple(map(int, line_start)), tuple(map(int, hor_right_vp)), (0, 0, 255), 1)
+
+    return grid_image
 
 def unwarp(img, roi_corners):
     src = np.float32(roi_corners)
@@ -1196,6 +1269,43 @@ def adjust_points_to_collinear(center_bottom, center_top, int_bev):
 
     return adjusted_bottom, adjusted_top
 
+def adjust_upper_face(lower_face, upper_face, hor_van, ver_van):
+    # Ensure input faces are valid
+    assert lower_face.shape == upper_face.shape, "Lower and upper faces must have the same number of points."
+    assert lower_face.shape[1] == 2, "Face points should be in (x, y) format."
+
+    # Initialize adjusted upper face
+    adjusted_upper_face = upper_face.copy()
+
+    # Adjust each point of the upper face
+    for i in range(lower_face.shape[0]):
+        lower_point = lower_face[i]
+        upper_point = upper_face[i]
+
+        # Compute the line from the lower face point to the horizontal vanishing point
+        line_to_hor_van = np.cross(
+            np.array([lower_point[0], lower_point[1], 1]),
+            np.array([hor_van[0], hor_van[1], 1])
+        )
+
+        # Compute the line from the upper face point to the vertical vanishing point
+        line_to_ver_van = np.cross(
+            np.array([upper_point[0], upper_point[1], 1]),
+            np.array([ver_van[0], ver_van[1], 1])
+        )
+
+        # Find the adjusted upper point as the intersection of the two lines
+        adjusted_point_homogeneous = np.cross(line_to_hor_van, line_to_ver_van)
+        if adjusted_point_homogeneous[2] != 0:
+            adjusted_point = adjusted_point_homogeneous[:2] / adjusted_point_homogeneous[2]  # Convert to Cartesian
+        else:
+            adjusted_point = upper_point  # Fallback in case of no intersection (shouldn't happen)
+
+        # Update the adjusted upper face point
+        adjusted_upper_face[i] = adjusted_point
+
+    return adjusted_upper_face
+
 def main(video_path, draw_boundaries=True, debug=False):
 
     ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.75)
@@ -1205,6 +1315,9 @@ def main(video_path, draw_boundaries=True, debug=False):
     int_bev = get_intersect(line1_bev[0], line1_bev[1], line2_bev[0], line2_bev[1])
     print(int_bev)
     int_bev_iv = iv(int_bev)
+    
+    hor_van = get_intersect(line3[0], line3[1], line4[0], line4[1])
+    ver_van = get_intersect(line1[0], line1[1], line2[0], line2[1])
 
     cap = cv2.VideoCapture(input_video_path)
     # Get video properties
@@ -1588,6 +1701,9 @@ def main(video_path, draw_boundaries=True, debug=False):
                     avg_lower_face = map_points_to_BEV(avg_bottom, inv_mat)
 
                     avg_upper_face = map_points_to_BEV(avg_top, inv_mat)
+
+                    # Adjust upper face
+                    avg_upper_face = adjust_upper_face(avg_lower_face, avg_upper_face, hor_van, ver_van)
 
                     bev_length = np.linalg.norm(rot_bootom_iv[rot_corner_ind] -
                                                 rot_bootom_iv[

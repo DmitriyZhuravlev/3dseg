@@ -907,7 +907,7 @@ def draw_cube(image,
                  tuple(lower_face[lower_idx][0]),
                  tuple(upper_face[upper_idx][0]),
                  color=color,
-                 thickness=thickness)
+                 thickness=thickness -1)
 
     return image
 
@@ -1515,7 +1515,7 @@ def find_tangent_points(mask_center, hull_points, vp):
     neg_line = np.cross([vp[0], vp[1], 1], [neg_point[0], neg_point[1], 1])
 
     return pos_point, pos_line, neg_point, neg_line
-    
+ 
 
 def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
 
@@ -1639,10 +1639,353 @@ def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, deb
         plt.legend()
         plt.show()
         
-    print([corner_a, corner_b, corner_h, corner_c])
-    print([corner_a1, corner_b1, corner_h1, corner_c1])
+    # print([corner_a, corner_b, corner_h, corner_c])
+    # print([corner_a1, corner_b1, corner_h1, corner_c1])
 
     return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
+
+def compute_3d_box_from_plain_mask_new(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
+
+    # Step 1: Extract non-zero points (boundary of the mask)
+    points = np.argwhere(mask > 0)  # Extract all non-zero pixel coordinates (row, col)
+    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
+
+    if len(points) < 3:
+        raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
+
+    # Step 2: Compute Convex Hull for a clean boundary
+    #hull = ConvexHull(points)
+    hull_points = points #points[hull.vertices]
+    #polygon = Polygon(hull_points)  # Create a polygon using the convex hull
+
+    # Step 3: Calculate the reference angle (line from VP to mask center)
+    mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
+    #ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
+    # TODO left, right ?
+    point_b, line2, point_a, line1 = find_tangent_points(mask_center, hull_points, hor_right_vp)
+    point_d, line4, point_c, line3  = find_tangent_points(mask_center, hull_points, vert_vp)
+    # TODO check orientation
+    point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
+
+    # Step 2: Compute intersections for corners
+    def compute_intersection(line1, line2):
+        """Compute the intersection of two lines in homogeneous coordinates."""
+        inter = np.cross(line1, line2)
+        if inter[2] != 0:
+            return inter[:2] / inter[2]
+        return None  # Parallel lines
+
+    corner_a = compute_intersection(line1, line6)
+    corner_c = compute_intersection(line6, line3)
+    corner_b = compute_intersection(line4, line1)
+    
+    
+    
+    
+    # Step 3: Calculate corner H
+    if corner_c is not None and corner_b is not None:
+        line_c_h = LineString([corner_c, hor_right_vp])
+        line_b_h = LineString([corner_b, hor_left_vp])
+        if line_c_h.intersects(line_b_h):
+            intersection_point = line_c_h.intersection(line_b_h)
+            if intersection_point.geom_type == "Point":
+                corner_h = (intersection_point.x, intersection_point.y)
+            else:
+                corner_h = None  # Handle unexpected intersection types (e.g., LineString)
+        else:
+            corner_h = None
+    else:
+        corner_h = None
+
+    epsilon = 1e-1  # Small shift value
+    if corner_h is None:
+        # Slightly shift corner_c and corner_b if no intersection exists
+        shifted_corner_c = (corner_c[0] + epsilon, corner_c[1] + epsilon)
+        shifted_corner_b = (corner_b[0] - epsilon, corner_b[1] - epsilon)
+        
+        line_c_h = LineString([shifted_corner_c, hor_right_vp])
+        line_b_h = LineString([shifted_corner_b, hor_left_vp])
+        
+        if line_c_h.intersects(line_b_h):
+            intersection_point = line_c_h.intersection(line_b_h)
+            if intersection_point.geom_type == "Point":
+                corner_h = (intersection_point.x, intersection_point.y)
+                print("Found with epsilon")
+            else:
+                corner_h = None  # Handle unexpected intersection types
+        else:
+            corner_h = None
+
+    # if corner_h is None:
+        # # Slightly shift corner_c and corner_b if no intersection exists
+        # shifted_corner_c = (corner_c[0] + epsilon, corner_c[1] + epsilon)
+        # shifted_corner_b = (corner_b[0] - epsilon, corner_b[1] - epsilon)
+        
+        # line_c_h = LineString([shifted_corner_c, hor_right_vp])
+        # line_b_h = LineString([shifted_corner_b, hor_left_vp])
+        
+        # if line_c_h.intersects(line_b_h):
+            # intersection_point = line_c_h.intersection(line_b_h)
+            # if intersection_point.geom_type == "Point":
+                # corner_h = (intersection_point.x, intersection_point.y)
+            # else:
+                # corner_h = None  # Handle unexpected intersection types
+        # else:
+            # corner_h = None
+    
+    
+    corner_c1 = compute_intersection(line2, line3)
+    corner_b1 = compute_intersection(line5, line4)
+
+    corner_a11 = get_intersect(hor_left_vp, corner_c1, vert_vp, corner_a)
+    corner_a12 = get_intersect(hor_right_vp, corner_b1, vert_vp, corner_a)
+    
+    corner_a1 = corner_a11 if corner_a11[1] < corner_a12[1] else corner_a12
+    corner_c1 = get_intersect(hor_left_vp, corner_a1, vert_vp, corner_c)
+    corner_b1 = get_intersect(hor_right_vp, corner_a1, vert_vp, corner_b)
+
+    center = get_intersect(corner_c, corner_b, corner_a, corner_h)
+    center1 = get_intersect(corner_c1, corner_b1, vert_vp, center)
+    corner_h1 = get_intersect(corner_a1, center1, vert_vp, corner_h)
+
+    # Compile the list of corners (including `corner_a` again to close the loop)
+    corners = [corner_a, corner_b, corner_h, corner_c, corner_a]
+    corners1 = [corner_a1, corner_b1, corner_h1, corner_c1, corner_a1]
+    
+    # Debugging and visualization
+    if debug:
+        plt.imshow(mask, cmap='gray')  # Show the mask in the background
+    
+        # Function to safely plot points
+        def plot_point(corner, color, label, marker='o'):
+            if corner is not None and len(corner) == 2:
+                plt.scatter(*corner, color=color, marker=marker, label=label)
+   
+        def draw_line_segment(vp, point, color):
+            if vp is not None and point is not None:
+                plt.plot([vp[0], point[0]], [vp[1], point[1]], color=color, linestyle="--") 
+  
+      
+        plot_point(corner_a, 'red', "corner a")
+        plot_point(corner_b, 'blue', "corner b")
+        plot_point(corner_c, 'green', "corner c")
+        plot_point(corner_h, 'yellow', "corner h")
+        
+        plot_point(corner_a1, 'red', "corner a1")
+        plot_point(corner_b1, 'blue', "corner b1")
+        plot_point(corner_c1, 'green', "corner c1")
+        plot_point(corner_h1, 'yellow', "corner h1")
+    
+        # Plot tangent lines
+        draw_line_segment(hor_right_vp, point_a, 'red')
+        draw_line_segment(hor_right_vp, point_b, 'red')
+        draw_line_segment(vert_vp, point_c, 'blue')
+        draw_line_segment(vert_vp, point_d, 'blue')
+        draw_line_segment(hor_left_vp, point_e, 'green')
+        draw_line_segment(hor_left_vp, point_f, 'green')
+        # plot_point(corner_a, 'teal', "corner_a")
+        # plot_point(corner_c, 'green', "corner_c")
+        # plot_point(corner_b, 'yellow', "corner_b")
+
+
+    
+        # Filter valid corners for visualization
+        valid_corners = [corner for corner in corners if corner is not None]
+        valid_corners1 = [corner for corner in corners1 if corner is not None]
+    
+        # Zoom into the mask region
+        rows, cols = np.where(mask)
+        if rows.size > 0 and cols.size > 0:
+            plt.xlim([cols.min() - 10, cols.max() + 10])
+            plt.ylim([rows.max() + 10, rows.min() - 10])  # Invert y-axis for correct orientation
+    
+        # Show legend and final plot
+        plt.legend()
+        plt.show()
+        
+    # print([corner_a, corner_b, corner_h, corner_c])
+    # print([corner_a1, corner_b1, corner_h1, corner_c1])
+
+    return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
+
+
+def compute_3d_box_from_plain_mask_adjust(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
+
+    # Step 1: Extract non-zero points (boundary of the mask)
+    points = np.argwhere(mask > 0)  # Extract all non-zero pixel coordinates (row, col)
+    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
+
+    if len(points) < 3:
+        raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
+
+    # Step 2: Compute Convex Hull for a clean boundary
+    #hull = ConvexHull(points)
+    hull_points = points #points[hull.vertices]
+    #polygon = Polygon(hull_points)  # Create a polygon using the convex hull
+
+    # Step 3: Calculate the reference angle (line from VP to mask center)
+    mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
+    #ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
+    # TODO left, right ?
+    point_b, line2, point_a, line1 = find_tangent_points(mask_center, hull_points, hor_right_vp)
+    point_d, line4, point_c, line3  = find_tangent_points(mask_center, hull_points, vert_vp)
+    # TODO check orientation
+    point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
+
+    # Step 2: Compute intersections for corners
+    def compute_intersection(line1, line2):
+        """Compute the intersection of two lines in homogeneous coordinates."""
+        inter = np.cross(line1, line2)
+        if inter[2] != 0:
+            return inter[:2] / inter[2]
+        return None  # Parallel lines
+
+    corner_a = compute_intersection(line1, line6)
+    corner_c = compute_intersection(line6, line3)
+    corner_b = compute_intersection(line4, line1)
+    
+    
+    
+    
+    # Step 3: Calculate corner H
+    if corner_c is not None and corner_b is not None:
+        line_c_h = LineString([corner_c, hor_right_vp])
+        line_b_h = LineString([corner_b, hor_left_vp])
+        if line_c_h.intersects(line_b_h):
+            intersection_point = line_c_h.intersection(line_b_h)
+            if intersection_point.geom_type == "Point":
+                corner_h = (intersection_point.x, intersection_point.y)
+            else:
+                corner_h = None  # Handle unexpected intersection types (e.g., LineString)
+        else:
+            corner_h = None
+    else:
+        corner_h = None
+
+    # epsilon = 1  # Small shift value
+    # if corner_h is None:
+       # # Slightly shift corner_c and corner_b if no intersection exists
+        # #epsilon = 1e-3  # Small shift value
+        # shifted_corner_c = (corner_c[0] + epsilon, corner_c[1] + epsilon)
+        # shifted_corner_b = corner_b #(corner_b[0] - epsilon, corner_b[1] - epsilon)
+        
+        # line_c_h = LineString([shifted_corner_c, hor_right_vp])
+        # line_b_h = LineString([shifted_corner_b, hor_left_vp])
+        
+        # if line_c_h.intersects(line_b_h):
+            # intersection_point = line_c_h.intersection(line_b_h)
+            # if intersection_point.geom_type == "Point":
+                # corner_h = (intersection_point.x, intersection_point.y)
+            # else:
+                # corner_h = None  # Handle unexpected intersection types
+        # else:
+            # corner_h = None
+
+
+    # if corner_h is None:
+       # # Slightly shift corner_c and corner_b if no intersection exists
+        # #epsilon = 1e-3  # Small shift value
+        # shifted_corner_c = corner_c #(corner_c[0] + epsilon, corner_c[1] + epsilon)
+        # shifted_corner_b = (corner_b[0] - epsilon, corner_b[1] - epsilon)
+        
+        # line_c_h = LineString([shifted_corner_c, hor_right_vp])
+        # line_b_h = LineString([shifted_corner_b, hor_left_vp])
+        
+        # if line_c_h.intersects(line_b_h):
+            # intersection_point = line_c_h.intersection(line_b_h)
+            # if intersection_point.geom_type == "Point":
+                # corner_h = (intersection_point.x, intersection_point.y)
+            # else:
+                # corner_h = None  # Handle unexpected intersection types
+        # else:
+            # corner_h = None
+    
+    
+    # corner_c2 = compute_intersection(line2, line6)
+    # corner_b2 = compute_intersection(line1, line4)
+    # corner_h2 = corner_h
+    # corner_a2 = corner_a
+    
+    
+    corner_c1 = compute_intersection(line2, line3)
+    corner_a1 = get_intersect(hor_left_vp, corner_c1, vert_vp, corner_a)
+    corner_b1 = compute_intersection(line5, line4)
+    corner_h1 = compute_intersection(line2, line5)
+    # corner_a12 = get_intersect(hor_left_vp, corner_c1, hor_right_vp, corner_b1)
+    # corner_a1 = ((corner_a11[0] + corner_a12[0])/2, (corner_a11[1] + corner_a12[1])/2)
+   
+    # Compile the list of corners (including `corner_a` again to close the loop)
+    corners = [corner_a, corner_b, corner_h, corner_c, corner_a]
+    corners1 = [corner_a1, corner_b1, corner_h1, corner_c1, corner_a1]
+    
+    # Debugging and visualization
+    if debug:
+        plt.imshow(mask, cmap='gray')  # Show the mask in the background
+    
+        # Function to safely plot points
+        def plot_point(corner, color, label, marker='o'):
+            if corner is not None and len(corner) == 2:
+                plt.scatter(*corner, color=color, marker=marker, label=label)
+   
+        def draw_line_segment(vp, point, color):
+            if vp is not None and point is not None:
+                plt.plot([vp[0], point[0]], [vp[1], point[1]], color=color, linestyle="--") 
+  
+      
+        plot_point(corner_a, 'red', "corner a")
+        plot_point(corner_b, 'blue', "corner b")
+        plot_point(corner_c, 'green', "corner c")
+        plot_point(corner_h, 'yellow', "corner h")
+        
+        plot_point(corner_a1, 'red', "corner a1")
+        plot_point(corner_b1, 'blue', "corner b1")
+        plot_point(corner_c1, 'green', "corner c1")
+        plot_point(corner_h1, 'yellow', "corner h1")
+    
+        # Plot tangent lines
+        draw_line_segment(hor_right_vp, point_a, 'red')
+        draw_line_segment(hor_right_vp, point_b, 'red')
+        draw_line_segment(vert_vp, point_c, 'blue')
+        draw_line_segment(vert_vp, point_d, 'blue')
+        draw_line_segment(hor_left_vp, point_e, 'green')
+        draw_line_segment(hor_left_vp, point_f, 'green')
+        # plot_point(corner_a, 'teal', "corner_a")
+        # plot_point(corner_c, 'green', "corner_c")
+        # plot_point(corner_b, 'yellow', "corner_b")
+
+
+    
+        # Filter valid corners for visualization
+        # valid_corners = [corner for corner in corners if corner is not None]
+        # valid_corners1 = [corner for corner in corners1 if corner is not None]
+    
+        # Zoom into the mask region
+        rows, cols = np.where(mask)
+        if rows.size > 0 and cols.size > 0:
+            plt.xlim([cols.min() - 10, cols.max() + 10])
+            plt.ylim([rows.max() + 10, rows.min() - 10])  # Invert y-axis for correct orientation
+    
+        # Show legend and final plot
+        plt.legend()
+        plt.show()
+        
+    adjust = True
+    if adjust:
+        #print(f"corner_h1: {corner_h1}, hor_right_vp: {hor_right_vp}, vert_vp: {vert_vp}, corner_h: {corner_h}")
+        corner_h1 = get_intersect(corner_h1, hor_left_vp, vert_vp, corner_h)
+        corner_c1 = get_intersect(corner_h1, hor_left_vp, vert_vp, corner_c)
+        corner_b1 = get_intersect(corner_h1, hor_right_vp, vert_vp, corner_b)
+        #corner_a1 = get_intersect(corner_c1, hor_right_vp, vert_vp, corner_a)
+        corner_a1 = get_intersect(corner_c1, hor_right_vp, hor_left_vp, corner_b1)
+
+
+        
+        
+    # print([corner_a, corner_b, corner_h, corner_c])
+    # print([corner_a1, corner_b1, corner_h1, corner_c1])
+
+    return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
+
 
 def compute_3d_box_from_plain_mask_2(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
     """
@@ -1855,11 +2198,11 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         print(f"Processing {frame_count} frame")
-        if frame_count < 75 - 20:
+        if frame_count < 75:# - 20:
             prev_frame = next_frame
             #prev_bev = next_bev
             continue
-        if frame_count >  80 + 20:
+        if frame_count >  80:# + 20:
             prev_frame = next_frame
             #prev_bev = next_bev
             break
@@ -1871,16 +2214,6 @@ def main(video_path, draw_boundaries=True, debug=False):
         frame_filename = os.path.join(output_dir, f"frame_{frame_count:04d}.png")
         cv2.imwrite(frame_filename, resized_frame)  # Save resized frame
         print(f"Saved resized frame {frame_count} to {frame_filename}")
-
-        #if frame_count % 2 != 0: continue
-        
-        grid_image = draw_3d_grid(next_frame, vert_vp, hor_left_vp, hor_right_vp, grid_size=15)
-        #grid_image = draw_grid_lines(next_frame, origin, hor_right_vp, grid_size=10, color=(0, 0, 255), thickness=1)
-
-        # Display the grid
-        cv2.imshow("grid", grid_image)
-                   #resize_to_match_height(grid_image, screen_height))
-
                                       
 
         # Compute the difference and create the moving mask
@@ -2010,6 +2343,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                         'plain_mask' : mask,
                         'mask_center': mask_center,
                         'lower_face' : None,
+                        'z': 0,
+                        'mat': ipm_matrix,
                         
                         #'mask': mask,
                         'height': None,  # Store the height of the segment
@@ -2037,47 +2372,56 @@ def main(video_path, draw_boundaries=True, debug=False):
             segment_mask = segment['plain_mask']
             try:
                 # Compute 3D box
-                lower_face, upper_face = compute_3d_box_from_plain_mask(
+                lower_face, upper_face = compute_3d_box_from_plain_mask_new(
                     segment_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
                 )
                 #cv2_color = segment_colors[segment_label][0]
-                draw_cube(
-                    img_with_box,
-                    lower_face.astype("int"),
-                    upper_face.astype("int"),
-                    color=cv2_color,
-                    thickness=2,
-                )
+                # draw_cube(
+                    # img_with_box,
+                    # lower_face.astype("int"),
+                    # upper_face.astype("int"),
+                    # color=cv2_color,
+                    # thickness=2,
+                # )
+                # print(f"OK segment ")
             except Exception as e:
-                #print(f"Error processing segment {segment_label}: {e}")
+                print(f"Error processing segment ")
                 continue
 
             #continue
 
             if lower_face is not None and upper_face is not None:
-                if True:
-                    bottom_face = map_points_to_BEV(lower_face, ipm_matrix)
-                    top_face = map_points_to_BEV(upper_face, ipm_matrix)
-                    # A-B = 0-1
 
-                    avg_upper_face = upper_face
-                    avg_lower_face = lower_face
+                bottom_face = map_points_to_BEV(lower_face, ipm_matrix)
+                top_face = map_points_to_BEV(upper_face, ipm_matrix)
+                bev_points_iv = to_iv(bottom_face)
+                top_iv = to_iv(top_face)
+                print(bottom_face)
+                # A-B = 0-1
 
-                    bev_length = np.linalg.norm(bottom_face[0] -
-                                                bottom_face[-1])
-                    # TODO adjust according to view angle
-                    proj_length = np.linalg.norm(lower_face[0] -
-                                                upper_face[-1])
-                    plain_height = np.linalg.norm(
-                        avg_lower_face[0] -
-                        avg_upper_face[1])
-                    scaling_factor = bev_length / proj_length
-                    height = plain_height * scaling_factor
+                avg_upper_face = upper_face
+                avg_lower_face = lower_face
+
+                bev_length = np.linalg.norm(bottom_face[0] -
+                                            bottom_face[-1])
+                # TODO adjust according to view angle
+                proj_length = np.linalg.norm(lower_face[0] -
+                                            upper_face[-1])
+                plain_height = np.linalg.norm(
+                    avg_lower_face[0] -
+                    avg_upper_face[1])
+                scaling_factor = bev_length / proj_length
+
+                height = 1 #plain_height * scaling_factor
 
 
-                    segment['height'] = height
-                    segment['lower_face'] = avg_lower_face
-                    segment['upper_face'] = avg_upper_face
+                segment['height'] = height
+                segment['lower_face'] = avg_lower_face
+                segment['upper_face'] = avg_upper_face
+                segment['bottom'] = bev_points_iv
+                segment['top'] = top_iv
+
+        #cv2.imshow('img_with_box ', img_with_box)
 
 
         for i, segment in enumerate(segments):
@@ -2085,42 +2429,79 @@ def main(video_path, draw_boundaries=True, debug=False):
 
 
             z = 0
+            height = segment['height']
 
             segment_label =  segment['label']
             avg_lower_face = segment['lower_face']
             avg_upper_face = segment['upper_face']
-            #cv2_color = labels_to_color(segment_label)
+            avg_bootom_iv = segment['bottom']
+            avg_top_iv = segment['top']
+            superposed_mat = segment['mat']
             cv2_color, plt_color = generate_random_color()
-            # Loop through earlier segments (which are below in the image)
-            for j, other_segment in enumerate(segments[:i]):
-                other_label = other_segment['label']
-                if other_label == segment_label:
-                    continue
-                # other_top = other_segment['top']
-                # other_bottom = other_segment['bottom']
+            
+            print(avg_bootom_iv)
 
-                # Check if other_segment is a neighbor of segment
-                if other_label in neighbors_dict[segment_label]:
+            if avg_bootom_iv is not None:# None: continue
+                #cv2_color = labels_to_color(segment_label)
+                #cv2_color, plt_color = generate_random_color()
+                # Loop through earlier segments (which are below in the image)
+                for j, other_segment in enumerate(segments):#[:i]):
+                    other_label = other_segment['label']
+                    if other_label == segment_label:
+                        continue
+                    # other_top = other_segment['top']
+                    # other_bottom = other_segment['bottom']
+    
+                    # Check if other_segment is a neighbor of segment
+                    if True: #other_label in neighbors_dict[segment_label]:
+    
+                         other_upper_face = other_segment['upper_face']
+                         if avg_lower_face is not None and other_upper_face is not None:
+                             if faces_overlap(avg_lower_face, other_upper_face):
+                                 cv2_color = other_segment['cv2_color']
+                                 plt_color = other_segment['plt_color']
+    
+                                 z = other_segment['z'] + height
+                                 pts1 = np.float32(other_segment['upper_face'])   
+                                 pts2 = np.float32(to_iv(other_segment['bottom']))
+    
+                                 # Generate the perspective transformation matrices
+                                 loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
+                                 superposed_mat = np.dot(loc_persp, other_segment['mat'])
+                                    
+                                 avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
+                                 #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+    
+                                 break
+    
+                # segment['top'] = avg_top_iv
+                segment['bottom'] = avg_bootom_iv
+                segment['cv2_color'] = cv2_color
+                segment['plt_color'] = plt_color
+    
+                segment['height'] = height
+                segment['z'] = z
+                segment['mat'] = superposed_mat
+                #Extend avg_upper_face by adding height to each point
+                avg_bottom_3d = []
+                for point in avg_bootom_iv:
+                    x_2d, y_2d = point
+                    avg_bottom_3d.append(
+                        [x_2d, y_2d, z])  # Add height as the third coordinate
+    
+                avg_bottom_3d = np.array(
+                    avg_bottom_3d)  # Convert to a NumPy array if needed
+                #segment['bottom'] = avg_bottom
+    
+                #Collect lower and upper faces for 3D rendering
+                if len(avg_bottom_3d) == 4:
+                    lower_faces.append(
+                        avg_bottom_3d
+                    )  # Lower face remains 2D (or use zeros for Z if required)
+                    heights.append(1)  # Now a 3D face
+                    colors.append(plt_color)
 
-                     other_upper_face = other_segment['upper_face']
-                     if avg_lower_face is not None and other_upper_face is not None:
-                         if faces_overlap(avg_lower_face, other_upper_face):
-                             cv2_color = other_segment['cv2_color']
-                             plt_color = other_segment['plt_color']
 
-                             break
-
-            # segment['top'] = avg_top_iv
-            # segment['bottom'] = avg_bootom_iv
-            segment['cv2_color'] = cv2_color
-            # segment['plt_color'] = plt_color
-
-            # draw_cube(
-                # bev_output,
-                # avg_bottom.astype("int"),
-                # avg_top.astype("int"),
-                # color=cv2_color,  #cv_colors.ORANGE.value,
-                # thickness=2)
             if avg_lower_face is not None and avg_upper_face is not None:
                 draw_cube(
                 bounding_box_image,
@@ -2131,8 +2512,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
 
         out.write(img_with_box)
-        resized_image = resize_to_match_height(bounding_box_image,
-                                               screen_height)
+        resized_image = bounding_box_image #resize_to_match_height(bounding_box_image, screen_height)
         prev_frame = next_frame
 
         cv2.imshow('Bounding Boxes', resized_image)
@@ -2142,9 +2522,9 @@ def main(video_path, draw_boundaries=True, debug=False):
             cv2.imwrite('BoundingBoxes.png', bounding_box_image)
             break
 
-        # # Call your function to draw cubes
-        # if debug and len(lower_faces) > 1:# and frame_count == 80:
-            # draw_cubes_in_3d(lower_faces, heights, colors)
+        # Call your function to draw cubes
+        if debug and len(lower_faces) > 1:# and frame_count == 80:
+            draw_cubes_in_3d(lower_faces, heights, colors)
 
     #cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

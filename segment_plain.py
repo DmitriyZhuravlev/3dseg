@@ -2484,6 +2484,21 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                             break
 
+                    other_lower_face = other_segment['lower_face']
+                    if avg_lower_face is not None and other_lower_face is not None:
+                        if faces_overlap(avg_lower_face, other_lower_face):
+                            cv2_color = other_segment['cv2_color']
+                            plt_color = other_segment['plt_color']
+
+                            z = other_segment['z']
+                            level = other_segment['level']
+                            superposed_mat = other_segment['mat']
+
+                            avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
+                            #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+
+                            break
+
                     # Check if other_segment is a neighbor of segment
                     # if other_label in neighbors_dict[segment_label]:
                         # relative_positions = neighbors_dict[segment_label][

@@ -23,7 +23,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -56,6 +56,17 @@ class cv_colors(Enum):
     YELLOW = (2, 255, 250)
     WHITE = (255, 255, 255)
     BLACK = (0, 0, 0)
+    CYAN = (255, 255, 0)
+    MAGENTA = (255, 0, 255)
+    GRAY = (128, 128, 128)
+    LIGHT_BLUE = (173, 216, 230)
+    DARK_GREEN = (0, 100, 0)
+    BROWN = (42, 42, 165)
+    PINK = (203, 192, 255)
+    GOLD = (0, 215, 255)
+    SILVER = (192, 192, 192)
+    TEAL = (128, 128, 0)
+    NAVY = (128, 0, 0)
 
 
 debug = True
@@ -907,7 +918,7 @@ def draw_cube(image,
                  tuple(lower_face[lower_idx][0]),
                  tuple(upper_face[upper_idx][0]),
                  color=color,
-                 thickness=thickness -1)
+                 thickness=thickness)
 
     return image
 
@@ -2272,8 +2283,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
         moving_mask = new_mask
         # Display the moving mask
-        cv2.imshow('Moving Mask',
-                   resize_to_match_height(moving_mask, screen_height))
+        #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
         region_size = 2*5*10  #200 #100 #15  #10#30
         ruler = 2*5*10  #150 # 100 #20 #14
@@ -2297,8 +2307,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         frame_output[0 < contour_mask] = cv_colors.RED.value
         
         # Display the moving mask
-        cv2.imshow('Segmentation',
-                   resize_to_match_height(frame_output, screen_height))
+        #cv2.imshow('Segmentation', resize_to_match_height(frame_output, screen_height))
 
         bounding_box_image = next_frame.copy()
         img_with_box  = next_frame.copy()
@@ -2345,6 +2354,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                         'lower_face' : None,
                         'z': 0,
                         'mat': ipm_matrix,
+                        'level': 0,
                         
                         #'mask': mask,
                         'height': None,  # Store the height of the segment
@@ -2412,7 +2422,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                     avg_upper_face[1])
                 scaling_factor = bev_length / proj_length
 
-                height = 1 #plain_height * scaling_factor
+                height = plain_height * scaling_factor
 
 
                 segment['height'] = height
@@ -2429,6 +2439,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
 
             z = 0
+            level = 0
             height = segment['height']
 
             segment_label =  segment['label']
@@ -2438,6 +2449,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             avg_top_iv = segment['top']
             superposed_mat = segment['mat']
             cv2_color, plt_color = generate_random_color()
+            cv2_color = cv_colors.BLACK.value
             
             print(avg_bootom_iv)
 
@@ -2449,36 +2461,58 @@ def main(video_path, draw_boundaries=True, debug=False):
                     other_label = other_segment['label']
                     if other_label == segment_label:
                         continue
-                    # other_top = other_segment['top']
-                    # other_bottom = other_segment['bottom']
-    
+
+   
+                    other_upper_face = other_segment['upper_face']
+                    if avg_lower_face is not None and other_upper_face is not None:
+                        if faces_overlap(avg_lower_face, other_upper_face):
+                            cv2_color = other_segment['cv2_color']
+                            plt_color = other_segment['plt_color']
+
+                            z = other_segment['z'] + other_segment['height']
+                            level = other_segment['level'] + 1
+                            pts1 = np.float32(other_segment['upper_face'])
+                            pts2 = np.float32(other_segment['lower_face'])
+                            #pts2 = np.float32(to_iv(other_segment['bottom']))
+
+                            # Generate the perspective transformation matrices
+                            loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
+                            superposed_mat = np.dot(loc_persp, other_segment['mat'])
+
+                            avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
+                            #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+
+                            break
+
                     # Check if other_segment is a neighbor of segment
-                    if True: #other_label in neighbors_dict[segment_label]:
-    
-                         other_upper_face = other_segment['upper_face']
-                         if avg_lower_face is not None and other_upper_face is not None:
-                             if faces_overlap(avg_lower_face, other_upper_face):
-                                 cv2_color = other_segment['cv2_color']
-                                 plt_color = other_segment['plt_color']
-    
-                                 z = other_segment['z'] + height
-                                 pts1 = np.float32(other_segment['upper_face'])   
-                                 pts2 = np.float32(to_iv(other_segment['bottom']))
-    
-                                 # Generate the perspective transformation matrices
-                                 loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                                 superposed_mat = np.dot(loc_persp, other_segment['mat'])
-                                    
-                                 avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
-                                 #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-    
-                                 break
+                    # if other_label in neighbors_dict[segment_label]:
+                        # relative_positions = neighbors_dict[segment_label][
+                            # other_label]
+
+                        # if ('left' in relative_positions
+                                # or 'right' in relative_positions):
+                                # # or 'bottom-left' in relative_positions
+                                # # or 'bottom-right' in relative_positions):
+
+                            # cv2_color = other_segment['cv2_color']
+                            # plt_color = other_segment['plt_color']
+
+                            # z = other_segment['z']
+                            # level = other_segment['level']
+                            # superposed_mat = other_segment['mat']
+
+                            # avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
+                            # break
     
                 # segment['top'] = avg_top_iv
+                
+                cv2_color = list(cv_colors)[level % len(cv_colors)].value
+
                 segment['bottom'] = avg_bootom_iv
                 segment['cv2_color'] = cv2_color
                 segment['plt_color'] = plt_color
-    
+
+                segment['level'] = level
                 segment['height'] = height
                 segment['z'] = z
                 segment['mat'] = superposed_mat
@@ -2492,13 +2526,15 @@ def main(video_path, draw_boundaries=True, debug=False):
                 avg_bottom_3d = np.array(
                     avg_bottom_3d)  # Convert to a NumPy array if needed
                 #segment['bottom'] = avg_bottom
+                
+                plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
     
                 #Collect lower and upper faces for 3D rendering
                 if len(avg_bottom_3d) == 4:
                     lower_faces.append(
                         avg_bottom_3d
                     )  # Lower face remains 2D (or use zeros for Z if required)
-                    heights.append(1)  # Now a 3D face
+                    heights.append(height)  # Now a 3D face
                     colors.append(plt_color)
 
 
@@ -2511,12 +2547,13 @@ def main(video_path, draw_boundaries=True, debug=False):
                 thickness=2)
 
 
-        out.write(img_with_box)
+
         resized_image = bounding_box_image #resize_to_match_height(bounding_box_image, screen_height)
+        out.write(resized_image)
         prev_frame = next_frame
 
         cv2.imshow('Bounding Boxes', resized_image)
-        cv2.imshow('3D Boxes',img_with_box)
+        #cv2.imshow('3D Boxes',img_with_box)
 
         if cv2.waitKey(30) & 0xFF == 27:  # Esc key to stop
             cv2.imwrite('BoundingBoxes.png', bounding_box_image)

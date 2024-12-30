@@ -1141,23 +1141,47 @@ def flow_to_image(flow):
 
 
 # Utility function to check face overlap in BEV
-def faces_overlap(face1, face2):
+# def faces_overlap(face1, face2):
+    # """
+    # Check if two faces overlap in the BEV or image space.
+
+    # Parameters:
+    # - face1, face2: Each should be an array of four corner points, 
+                    # each point formatted as (x, y).
+
+    # Returns:
+    # - True if the faces overlap, False otherwise.
+    # """
+    # # Define polygons for each face based on the corner points
+    # p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
+    # p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
+
+    # # Check if the polygons intersect (overlap)
+    # return p1.intersects(p2)
+    
+# Utility function to check face overlap in BEV with epsilon parameter
+def faces_overlap(face1, face2, epsilon=0.0):
     """
-    Check if two faces overlap in the BEV or image space.
+    Check if two faces overlap in the BEV or image space, allowing for a small epsilon.
 
     Parameters:
     - face1, face2: Each should be an array of four corner points, 
                     each point formatted as (x, y).
+    - epsilon: A small value to expand the faces' boundaries for overlap checking.
 
     Returns:
-    - True if the faces overlap, False otherwise.
+    - True if the faces overlap (considering epsilon), False otherwise.
     """
     # Define polygons for each face based on the corner points
     p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
     p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
 
-    # Check if the polygons intersect (overlap)
-    return p1.intersects(p2)
+    # Expand the polygons slightly by epsilon
+    p1_buffered = p1.buffer(epsilon)
+    p2_buffered = p2.buffer(epsilon)
+
+    # Check if the buffered polygons intersect (overlap)
+    return p1_buffered.intersects(p2_buffered)
 
 
 
@@ -2187,6 +2211,8 @@ def main(video_path, draw_boundaries=True, debug=False):
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     camera_position = (width/2, height)
+    
+    camera_position_bev = map_points_to_BEV([camera_position], ipm_matrix)
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
@@ -2286,7 +2312,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
         region_size = 2*5*10  #200 #100 #15  #10#30
-        ruler = 2*5*10  #150 # 100 #20 #14
+        ruler = 2*5 *10  #150 # 100 #20 #14
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -2309,7 +2335,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Display the moving mask
         #cv2.imshow('Segmentation', resize_to_match_height(frame_output, screen_height))
 
-        bounding_box_image = next_frame.copy()
+        bounding_box_image = frame_output #next_frame.copy()
         img_with_box  = next_frame.copy()
 
         neighbors_dict = find_neighbors_within_mask(labels)
@@ -2406,23 +2432,16 @@ def main(video_path, draw_boundaries=True, debug=False):
                 top_face = map_points_to_BEV(upper_face, ipm_matrix)
                 bev_points_iv = to_iv(bottom_face)
                 top_iv = to_iv(top_face)
-                print(bottom_face)
+                #print(bottom_face)
                 # A-B = 0-1
 
                 avg_upper_face = upper_face
                 avg_lower_face = lower_face
 
-                bev_length = np.linalg.norm(bottom_face[0] -
-                                            bottom_face[-1])
                 # TODO adjust according to view angle
-                proj_length = np.linalg.norm(lower_face[0] -
-                                            upper_face[-1])
-                plain_height = np.linalg.norm(
-                    avg_lower_face[0] -
-                    avg_upper_face[1])
-                scaling_factor = bev_length / proj_length
-
-                height = plain_height * scaling_factor
+                proj_height = np.linalg.norm(avg_lower_face[0] - avg_upper_face[0])
+                dist = np.linalg.norm(camera_position_bev - bev_points_iv[0])
+                height = proj_height * dist
 
 
                 segment['height'] = height
@@ -2451,7 +2470,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             cv2_color, plt_color = generate_random_color()
             cv2_color = cv_colors.BLACK.value
             
-            print(avg_bootom_iv)
+            #print(avg_bootom_iv)
 
             if avg_bootom_iv is not None:# None: continue
                 #cv2_color = labels_to_color(segment_label)
@@ -2465,7 +2484,7 @@ def main(video_path, draw_boundaries=True, debug=False):
    
                     other_upper_face = other_segment['upper_face']
                     if avg_lower_face is not None and other_upper_face is not None:
-                        if faces_overlap(avg_lower_face, other_upper_face):
+                        if faces_overlap(avg_lower_face, other_upper_face, epsilon = 5):
                             cv2_color = other_segment['cv2_color']
                             plt_color = other_segment['plt_color']
 
@@ -2486,7 +2505,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                     other_lower_face = other_segment['lower_face']
                     if avg_lower_face is not None and other_lower_face is not None:
-                        if faces_overlap(avg_lower_face, other_lower_face):
+                        if faces_overlap(avg_lower_face, other_lower_face, epsilon = 5):
                             cv2_color = other_segment['cv2_color']
                             plt_color = other_segment['plt_color']
 
@@ -2499,7 +2518,7 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                             break
 
-                    # Check if other_segment is a neighbor of segment
+                    # # Check if other_segment is a neighbor of segment
                     # if other_label in neighbors_dict[segment_label]:
                         # relative_positions = neighbors_dict[segment_label][
                             # other_label]
@@ -2522,6 +2541,11 @@ def main(video_path, draw_boundaries=True, debug=False):
                 # segment['top'] = avg_top_iv
                 
                 cv2_color = list(cv_colors)[level % len(cv_colors)].value
+                
+                # TODO adjust according to view angle
+                proj_height = np.linalg.norm(avg_lower_face[0] - avg_upper_face[0])
+                dist = np.linalg.norm(camera_position_bev - avg_bootom_iv[0])
+                height = proj_height * dist
 
                 segment['bottom'] = avg_bootom_iv
                 segment['cv2_color'] = cv2_color
@@ -2575,8 +2599,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        if debug and len(lower_faces) > 1:# and frame_count == 80:
-            draw_cubes_in_3d(lower_faces, heights, colors)
+        # if debug and len(lower_faces) > 1:# and frame_count == 80:
+            # draw_cubes_in_3d(lower_faces, heights, colors)
 
     #cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

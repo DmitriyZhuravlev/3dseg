@@ -1550,6 +1550,53 @@ def find_tangent_points(mask_center, hull_points, vp):
     neg_line = np.cross([vp[0], vp[1], 1], [neg_point[0], neg_point[1], 1])
 
     return pos_point, pos_line, neg_point, neg_line
+    
+def find_segments_at_border(labels, moving_mask, vp, epsilon=2, debug = True):
+    """
+    Find SLIC segments that are at or touch the border of the moving mask.
+
+    Parameters:
+    - labels: SLIC labels matrix (H x W).
+    - hull_points: Convex hull points of the moving mask.
+    - moving_mask: Binary mask of the moving region (H x W).
+    - mask_center: Center of the moving mask (x, y).
+    - vp: Vanishing point (x, y).
+    - epsilon: Border thickness.
+
+    Returns:
+    - border_segments: Set of SLIC segment labels at the mask border.
+    """
+    hull_points = np.argwhere(moving_mask > 0)
+    mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
+    # Step 1: Find tangent points
+    pos_point, _ ,  neg_point, _ = find_tangent_points(mask_center, hull_points, vp)
+
+    # Step 2: Draw the boundary mask between tangent points
+    boundary_mask = np.zeros_like(moving_mask, dtype=np.uint8)
+    tangent_line = np.array([pos_point, neg_point])  # Line between tangent points
+    cv2.polylines(boundary_mask, [tangent_line.astype(int)], isClosed=False, color=1, thickness=epsilon)
+
+    # Combine the boundary mask with the moving mask to limit the region of interest
+    border_mask = cv2.bitwise_and(boundary_mask, moving_mask//255)
+
+    # Debug: Show the boundary mask
+    if debug:
+        debug_image = cv2.cvtColor(boundary_mask * 255, cv2.COLOR_GRAY2BGR)
+        cv2.circle(debug_image, pos_point, 5, (0, 0, 255), -1)  # Red dot at positive tangent point
+        cv2.circle(debug_image, neg_point, 5, (255, 0, 0), -1)  # Blue dot at negative tangent point
+        cv2.imshow("Boundary Mask (Debug)", debug_image)
+        cv2.imshow("Boundary Mask", border_mask)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+
+    # Step 3: Find unique SLIC labels in the border region
+    border_segments = set(np.unique(labels[border_mask > 0]))
+
+    # Remove background labels (label 0 or invalid regions)
+    border_segments.discard(0)
+
+    return border_segments
  
 
 def compute_3d_box_from_plain_mask(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
@@ -2191,6 +2238,175 @@ def segment_ray_intersects(point, camera_position, other_points):
                 return True  # Intersection found
 
     return False
+    
+def find_border_segments_cv2(next_frame, labels, epsilon=0):
+    """
+    Find SLIC segments that touch the border of the image, optionally extending to neighbors.
+
+    Parameters:
+    - next_frame: Input image (H x W x C).
+    - labels: Labeled array from cv2 SLIC (H x W).
+    - epsilon: The number of pixel rows/columns to include beyond the detected border segments.
+
+    Returns:
+    - border_labels: A set of segment labels that are on or near the border.
+    """
+    # Get the dimensions of the image
+    height, width = labels.shape
+
+    # Create a mask for the border
+    border_mask = np.zeros_like(labels, dtype=np.uint8)
+    border_mask[0, :] = 1  # Top border
+    border_mask[-1, :] = 1  # Bottom border
+    border_mask[:, 0] = 1  # Left border
+    border_mask[:, -1] = 1  # Right border
+
+    # Find labels touching the border
+    border_labels = set(np.unique(labels[border_mask == 1]))
+
+    # Optionally extend to nearby labels (epsilon)
+    if epsilon > 0:
+        # Create an extended border mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (epsilon * 2 + 1, epsilon * 2 + 1))
+        extended_mask = cv2.dilate(border_mask, kernel, iterations=1)
+
+        # Find extended labels
+        extended_labels = set(np.unique(labels[extended_mask == 1]))
+        border_labels.update(extended_labels)
+
+    return border_labels
+
+# Visualization Function
+def visualize_border_segments(next_frame, labels, border_labels):
+    """
+    Visualize the border segments by overlaying them on the image.
+
+    Parameters:
+    - next_frame: Input image (H x W x C).
+    - labels: Labeled array from cv2 SLIC (H x W).
+    - border_labels: A set of segment labels touching the border.
+
+    Returns:
+    - overlay: Image with border segments highlighted.
+    """
+    # Create a mask for the border segments
+    border_mask = np.isin(labels, list(border_labels)).astype(np.uint8)
+
+    # Create an overlay
+    overlay = next_frame.copy()
+    overlay[border_mask == 1] = [0, 0, 255]  # Highlight border segments in red
+
+    return overlay
+
+def find_boundary_with_diff(moving_mask):
+    # Compute row and column differences
+    diff_x = np.diff(moving_mask, axis=1, append=0)
+    diff_y = np.diff(moving_mask, axis=0, append=0)
+
+    # Combine differences to form a boundary mask
+    boundary_mask = ((diff_x != 0) | (diff_y != 0)).astype(np.uint8)
+
+    return boundary_mask
+
+def extract_segment_pixels_1(boundary_mask, pos_point, neg_point):
+    # Step 1: Extract all boundary points
+    boundary_points = np.argwhere(boundary_mask > 0)  # Format: [(y, x), ...]
+
+    # Convert to (x, y) format for easier processing
+    boundary_points_xy = [(x, y) for y, x in boundary_points]
+
+    # Step 2: Find the indices of pos_point and neg_point
+    pos_idx = np.argmin([np.linalg.norm(np.array(point) - np.array(pos_point)) for point in boundary_points_xy])
+    neg_idx = np.argmin([np.linalg.norm(np.array(point) - np.array(neg_point)) for point in boundary_points_xy])
+
+    # Step 3: Extract the segment by traversing the boundary
+    if pos_idx <= neg_idx:
+        segment = boundary_points_xy[pos_idx:neg_idx + 1]
+    else:
+        # Wrap around the boundary
+        segment = boundary_points_xy[pos_idx:] + boundary_points_xy[:neg_idx + 1]
+
+    # Convert back to (y, x) format for further processing
+    segment_pixels = [(x, y) for x, y in segment]
+    return segment_pixels
+    
+def extract_segment_pixels(boundary_mask, pos_point, neg_point):
+    # Step 1: Extract all boundary points
+    boundary_points = np.argwhere(boundary_mask > 0)  # Format: [(y, x), ...]
+
+    # Convert to (x, y) format for easier processing
+    boundary_points_xy = [(x, y) for y, x in boundary_points]
+
+    # Step 2: Sort boundary points based on their angle from the pos_point
+    def angle_from_pos(point):
+        # Compute angle of point relative to pos_point using arctan2
+        return np.arctan2(point[1] - pos_point[1], point[0] - pos_point[0])
+
+    # Sort points by angle from pos_point
+    boundary_points_xy.sort(key=angle_from_pos)
+
+    # Step 3: Find the indices of pos_point and neg_point in sorted points
+    pos_idx = next(i for i, point in enumerate(boundary_points_xy) if np.array_equal(point, tuple(pos_point)))
+    neg_idx = next(i for i, point in enumerate(boundary_points_xy) if np.array_equal(point, tuple(neg_point)))
+
+    # Step 4: Extract the segment by traversing the sorted boundary
+    if pos_idx <= neg_idx:
+        segment = boundary_points_xy[pos_idx:neg_idx + 1]
+    else:
+        # Wrap around the boundary
+        segment = boundary_points_xy[pos_idx:] + boundary_points_xy[:neg_idx + 1]
+
+    # Convert back to (y, x) format for further processing
+    segment_pixels = [(x, y) for x, y in segment]
+    return segment_pixels
+    
+def extract_segment_pixels_new(boundary_mask, pos_point, neg_point):
+    # Ensure pos_point and neg_point are [x, y]
+    assert len(pos_point) == 2 and len(neg_point) == 2, "Tangent points must be 2D coordinates."
+    
+    # Convert boundary_mask to a list of [x, y] coordinates
+    boundary_coords = np.argwhere(boundary_mask > 0)[:, ::-1]  # Convert to [x, y]
+    
+    # Extract points between pos_point and neg_point along the boundary
+    segment_pixels = []
+    start_found = False
+    for x, y in boundary_coords:
+        if (x, y) == tuple(pos_point):
+            start_found = True
+        if start_found:
+            segment_pixels.append((x, y))
+        if (x, y) == tuple(neg_point):
+            break
+    
+    return np.array(segment_pixels)  # Return as a numpy array for consistency
+
+def recursive_color_segment(image, segment_label, labels, segment_pixels, offsets, color, visited):
+    """Recursively color the segment layer by layer."""
+    # Mark the initial pixels in the segment with the specified color
+    for pixel in segment_pixels:
+        image[pixel[1], pixel[0]] = color  # Set the pixel color (y, x)
+
+    # Recursively explore neighboring pixels
+    stack = list(segment_pixels)  # Stack for DFS-like traversal
+    while stack:
+        x, y = stack.pop()
+        visited[y, x] = True  # Mark the current pixel as visited
+
+        # Check neighbors
+        for dy, dx in offsets:
+            ny, nx = y + dy, x + dx
+            if ny < 0 or ny >= labels.shape[0] or nx < 0 or nx >= labels.shape[1]:
+                continue  # Skip out-of-bound pixels
+
+            if visited[ny, nx]:
+                continue  # Skip already visited pixels
+
+            # Check if the neighbor belongs to the same segment
+            if labels[ny, nx] == segment_label:
+                image[nx, n] = color  # Set the neighbor pixel color
+                visited[ny, nx] = True  # Mark it as visited
+                stack.append((nx, ny))  # Add the neighbor to the stack for further exploration
+
 
 def main(video_path, draw_boundaries=True, debug=False):
 
@@ -2210,7 +2426,7 @@ def main(video_path, draw_boundaries=True, debug=False):
     fps = cap.get(cv2.CAP_PROP_FPS) // 2
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    camera_position = (width/2, height)
+    camera_position = np.float32([width/2, height])
     
     camera_position_bev = map_points_to_BEV([camera_position], ipm_matrix)
 
@@ -2324,14 +2540,95 @@ def main(video_path, draw_boundaries=True, debug=False):
         num_labels = np.max(labels) + 1
         
         labels[moving_mask == 0] = 0
-        
 
-        
-        # If debug is enabled
         frame_output = next_frame.copy()
         contour_mask = slic.getLabelContourMask(False)
         frame_output[0 < contour_mask] = cv_colors.RED.value
         
+        boundary_mask = find_boundary_with_diff(labels != 0)
+        boundary_coords = np.argwhere(boundary_mask > 0)  # Extract (y, x) coordinates of the boundary
+        
+        # Step 3: Calculate the centroid of the boundary points
+        mask_center = np.mean(boundary_coords, axis=0)  # Centroid as [y, x]
+
+        # Step 4: Find tangent points based on the centroid and camera position
+        pos_point, pos_line, neg_point, neg_line = find_tangent_points(
+            mask_center[::-1],  # Convert [y, x] to [x, y] for the tangent function
+            boundary_coords[:, ::-1],  # Convert all points to [x, y]
+            camera_position
+        )
+
+
+
+
+        border_pixels = extract_segment_pixels(boundary_mask, pos_point, neg_point)
+        #np.argwhere(boundary_mask > 0)  # Pixels on the boundary only
+
+        # Define 8-connectivity offsets
+        offsets = [(-1, -1), (-1, 0), (-1, 1),
+                   (0, -1), (0, 0), (0, 1),
+                   (1, -1), (1, 0), (1, 1)]
+
+        # Step 4: Identify border segments
+        border_segments = set()
+        for x, y in border_pixels:
+            if contour_mask[y, x] > 0:  # Check if the pixel is on the contour
+                # Check neighbors of the current border pixel
+                for dy, dx in offsets:
+                    ny, nx = y + dy, x + dx
+                    # Skip out-of-bound pixels
+                    if ny < 0 or ny >= labels.shape[0] or nx < 0 or nx >= labels.shape[1]:
+                        continue
+
+
+                    segment_label = labels[ny, nx]
+                    if segment_label > 0:  # Ignore masked-out labels
+                        border_segments.add(segment_label)
+
+        # visited = np.zeros_like(labels, dtype=bool)
+        # color = (0, 255, 0)  # Example color for the segments (green)
+    
+        # for segment_label in border_segments:
+            # # Extract all pixels belonging to this segment
+            # segment_pixels = np.argwhere(labels == segment_label)
+            
+            # # Recursively color the segment
+            # recursive_color_segment(next_frame, segment_label, labels, segment_pixels, offsets, color, visited)
+
+
+
+        # Step 5: Debug visualization (optional)
+        debug_image = next_frame.copy()
+        if debug:
+            # Highlight boundary mask
+            boundary_vis = cv2.cvtColor(boundary_mask * 255, cv2.COLOR_GRAY2BGR)
+            debug_image = cv2.addWeighted(debug_image, 0.7, boundary_vis, 0.3, 0)
+        
+            # Add circles for the tangent points
+            debug_image = cv2.circle(debug_image, tuple(pos_point.astype(int)), 3, (0, 255, 0), -1)  # Positive tangent point in green
+            debug_image = cv2.circle(debug_image, tuple(neg_point.astype(int)), 3, (255, 0, 0), -1)  # Negative tangent point in blue
+        
+            # Add circle for the camera position
+            debug_image = cv2.circle(debug_image, tuple(camera_position.astype(int)), 3, (0, 255, 255), -1)  # Camera position in yellow
+        
+            # Draw tangent lines
+            debug_image = cv2.line(debug_image, tuple(camera_position.astype(int)), tuple(pos_point.astype(int)), (0, 255, 0), 2)  # Line to pos_point (green)
+            debug_image = cv2.line(debug_image, tuple(camera_position.astype(int)), tuple(neg_point.astype(int)), (255, 0, 0), 2)  # Line to neg_point (blue)
+        
+            # Mark the segments touching the boundary
+            for label in border_segments:
+                debug_image[labels == label] = [0, 0, 255]  # Mark segments in red
+                
+            debug_image[0 < contour_mask] = cv_colors.BLACK.value
+        
+            # Display the debug image
+            cv2.imshow("Boundary Mask with Tangent Points, Camera Position, and Segments", debug_image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+        
+        
+        tangent_points, level_0_segments = find_visible_segments(camera_position, moving_mask, find_tangent_points)
+        draw_segmentation(camera_position, moving_mask, tangent_points, level_0_segments)
         # Display the moving mask
         #cv2.imshow('Segmentation', resize_to_match_height(frame_output, screen_height))
 

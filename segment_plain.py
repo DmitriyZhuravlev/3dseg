@@ -2539,7 +2539,22 @@ def main(video_path, draw_boundaries=True, debug=False):
         labels = slic.getLabels() + 1
         num_labels = np.max(labels) + 1
         
-        labels[moving_mask == 0] = 0
+        #labels[moving_mask == 0] = 0
+        
+        # Iterate through all unique segment labels
+        for segment_label in np.unique(labels):
+            # if segment_label == 0:
+                # continue  # Skip background label
+        
+            # Extract all pixels belonging to the current segment
+            segment_pixels = np.argwhere(labels == segment_label)
+        
+            # Check if the segment fully belongs to the moving_mask (i.e., all pixels in the segment should be inside moving_mask > 0)
+            segment_belongs_to_moving_mask = np.all(moving_mask[segment_pixels[:, 0], segment_pixels[:, 1]] > 0)
+        
+            # If the segment does not fully belong to the moving_mask, set its label to 0
+            if not segment_belongs_to_moving_mask:
+                labels[labels == segment_label] = 0
 
         frame_output = next_frame.copy()
         contour_mask = slic.getLabelContourMask(False)
@@ -2623,6 +2638,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         
             # Display the debug image
             cv2.imshow("Boundary Mask with Tangent Points, Camera Position, and Segments", debug_image)
+            cv2.imshow("boundary_vis", boundary_vis)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
         

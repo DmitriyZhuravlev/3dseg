@@ -721,10 +721,12 @@ def calculate_solution(orient1, alpha1, beta1, dist1, orient2, alpha2, beta2, di
     # return None, None
 
 def iv(a):
+    return a
     return (a[0], -a[1])
 
 
 def to_iv(array):
+    return array
     if array is None:
         return None
     converted = []

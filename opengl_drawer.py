@@ -1,6 +1,7 @@
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
 
 
 def generate_random_color():
@@ -121,3 +122,44 @@ def draw_cubes_in_3d(lower_faces, heights, colors):
     
     plt.ioff()
     plt.close(fig)
+    
+def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors):
+    """
+    Display the bounding_box_image on the left and draw 3D bounding boxes on the right.
+    """
+    plt.ion()  # Turn on interactive mode
+    fig = plt.figure(figsize=(12, 6))  # Create a wide figure for side-by-side display
+
+    # Create subplots
+    ax_img = fig.add_subplot(121)  # Left subplot for the bounding_box_image
+    ax_3d = fig.add_subplot(122, projection='3d')  # Right subplot for the 3D bounding boxes
+    ax_3d.view_init(elev=90, azim=-90)  # Align axes like in a mathematical system
+
+    while True:
+        # Left: Display the bounding_box_image
+        ax_img.cla()  # Clear the image plot
+        ax_img.imshow(cv2.cvtColor(bounding_box_image, cv2.COLOR_BGR2RGB))
+        ax_img.axis('off')  # Turn off axis for better visualization
+        ax_img.set_title("Bounding Box Image")
+
+        # Right: Display the 3D bounding boxes
+        ax_3d.cla()  # Clear the 3D plot
+        for lower_face, height, color in zip(lower_faces, heights, colors):
+            draw_3d_bounding_box(ax_3d, lower_face, height, color=color)
+
+        ax_3d.set_xlabel('X')
+        ax_3d.set_ylabel('Y')
+        ax_3d.set_zlabel('Z')
+        ax_3d.set_title("3D Bounding Boxes")
+        #set_equal_axes(ax_3d)  # Ensure equal scaling for the 3D plot
+
+        plt.draw()
+        plt.pause(0.001)  # Small delay for interactive updates
+
+        # Break the loop if a key is pressed
+        print("Press any key to render new boxes...")
+        if plt.waitforbuttonpress():
+            break
+
+    plt.ioff()  # Turn off interactive mode
+    plt.close(fig)  # Close the figure when done

@@ -23,7 +23,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -50,12 +50,10 @@ class cv_colors(Enum):
     RED = (0, 0, 255)
     GREEN = (0, 255, 0)
     BLUE = (255, 0, 0)
-    PURPLE = (247, 44, 200)
     ORANGE = (44, 162, 247)
+    PURPLE = (247, 44, 200)
     MINT = (239, 255, 66)
     YELLOW = (2, 255, 250)
-    WHITE = (255, 255, 255)
-    BLACK = (0, 0, 0)
     CYAN = (255, 255, 0)
     MAGENTA = (255, 0, 255)
     GRAY = (128, 128, 128)
@@ -67,6 +65,8 @@ class cv_colors(Enum):
     SILVER = (192, 192, 192)
     TEAL = (128, 128, 0)
     NAVY = (128, 0, 0)
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
 
 
 debug = True
@@ -2473,8 +2473,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         diff = cv2.absdiff(next_frame, avg_frame)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         ratio = 0.1
-        blurred_diff = cv2.GaussianBlur(gray_diff, (5, 5), 0)
-        _, moving_mask = cv2.threshold(blurred_diff, 15, 255, cv2.THRESH_BINARY)
+        blurred_diff = cv2.GaussianBlur(gray_diff, (3, 3), 0)
+        _, moving_mask = cv2.threshold(blurred_diff, 13, 255, cv2.THRESH_BINARY)
     
         #moving_mask = cv2.dilate(moving_mask, None, iterations=1)
         moving_mask_bin = moving_mask // 255
@@ -2550,353 +2550,351 @@ def main(video_path, draw_boundaries=True, debug=False):
             segment_pixels = np.argwhere(labels == segment_label)
         
             # Check if the segment fully belongs to the moving_mask (i.e., all pixels in the segment should be inside moving_mask > 0)
-            segment_belongs_to_moving_mask = np.all(moving_mask[segment_pixels[:, 0], segment_pixels[:, 1]] > 0)
+            segment_belongs_to_moving_mask = np.all(moving_mask[segment_pixels[:, 0], segment_pixels[:, 1]] > 0) #np.all(moving_mask[segment_pixels[:, 0], segment_pixels[:, 1]] > 0)
         
             # If the segment does not fully belong to the moving_mask, set its label to 0
             if not segment_belongs_to_moving_mask:
                 labels[labels == segment_label] = 0
+                
+        # # Find the boundary mask
+        # boundary_mask = find_boundary_with_diff(labels != 0)
+        # # Mark the boundary pixels in the labels as background
+        # labels[boundary_mask] = 0
 
         frame_output = next_frame.copy()
         contour_mask = slic.getLabelContourMask(False)
         frame_output[0 < contour_mask] = cv_colors.RED.value
         
-        boundary_mask = find_boundary_with_diff(labels != 0)
-        boundary_coords = np.argwhere(boundary_mask > 0)  # Extract (y, x) coordinates of the boundary
+        # Initialize variables
+        levels = np.copy(labels)
+
+        level = 0  # Start from level 0
+        frame_output = next_frame.copy()
         
-        # Step 3: Calculate the centroid of the boundary points
-        mask_center = np.mean(boundary_coords, axis=0)  # Centroid as [y, x]
-
-        # Step 4: Find tangent points based on the centroid and camera position
-        pos_point, pos_line, neg_point, neg_line = find_tangent_points(
-            mask_center[::-1],  # Convert [y, x] to [x, y] for the tangent function
-            boundary_coords[:, ::-1],  # Convert all points to [x, y]
-            camera_position
-        )
-
-
-
-
-        border_pixels = extract_segment_pixels(boundary_mask, pos_point, neg_point)
-        #np.argwhere(boundary_mask > 0)  # Pixels on the boundary only
-
-        # Define 8-connectivity offsets
-        offsets = [(-1, -1), (-1, 0), (-1, 1),
-                   (0, -1), (0, 0), (0, 1),
-                   (1, -1), (1, 0), (1, 1)]
-
-        # Step 4: Identify border segments
-        border_segments = set()
-        for x, y in border_pixels:
-            if contour_mask[y, x] > 0:  # Check if the pixel is on the contour
-                # Check neighbors of the current border pixel
-                for dy, dx in offsets:
-                    ny, nx = y + dy, x + dx
-                    # Skip out-of-bound pixels
-                    if ny < 0 or ny >= labels.shape[0] or nx < 0 or nx >= labels.shape[1]:
-                        continue
-
-
-                    segment_label = labels[ny, nx]
-                    if segment_label > 0:  # Ignore masked-out labels
-                        border_segments.add(segment_label)
-
-        # visited = np.zeros_like(labels, dtype=bool)
-        # color = (0, 255, 0)  # Example color for the segments (green)
-    
-        # for segment_label in border_segments:
-            # # Extract all pixels belonging to this segment
-            # segment_pixels = np.argwhere(labels == segment_label)
-            
-            # # Recursively color the segment
-            # recursive_color_segment(next_frame, segment_label, labels, segment_pixels, offsets, color, visited)
-
-
-
-        # Step 5: Debug visualization (optional)
-        debug_image = next_frame.copy()
-        if debug:
-            # Highlight boundary mask
-            boundary_vis = cv2.cvtColor(boundary_mask * 255, cv2.COLOR_GRAY2BGR)
-            debug_image = cv2.addWeighted(debug_image, 0.7, boundary_vis, 0.3, 0)
+        while np.any(levels > 0):  # Continue until all segments are marked
+            # Assign a color for the current level
+            cv2_color = list(cv_colors)[level % len(cv_colors)].value
         
-            # Add circles for the tangent points
-            debug_image = cv2.circle(debug_image, tuple(pos_point.astype(int)), 3, (0, 255, 0), -1)  # Positive tangent point in green
-            debug_image = cv2.circle(debug_image, tuple(neg_point.astype(int)), 3, (255, 0, 0), -1)  # Negative tangent point in blue
+            # Find the boundary mask
+            boundary_mask = find_boundary_with_diff(levels > level)
+            boundary_coords = np.argwhere(boundary_mask > 0)  # Extract (y, x) coordinates of the boundary
         
-            # Add circle for the camera position
-            debug_image = cv2.circle(debug_image, tuple(camera_position.astype(int)), 3, (0, 255, 255), -1)  # Camera position in yellow
+            # Step 3: Calculate the centroid of the boundary points
+            if len(boundary_coords) == 0:
+                break  # Exit if no more boundaries exist
+            mask_center = np.mean(boundary_coords, axis=0)  # Centroid as [y, x]
         
-            # Draw tangent lines
-            debug_image = cv2.line(debug_image, tuple(camera_position.astype(int)), tuple(pos_point.astype(int)), (0, 255, 0), 2)  # Line to pos_point (green)
-            debug_image = cv2.line(debug_image, tuple(camera_position.astype(int)), tuple(neg_point.astype(int)), (255, 0, 0), 2)  # Line to neg_point (blue)
+            # Step 4: Find tangent points based on the centroid and camera position
+            pos_point, pos_line, neg_point, neg_line = find_tangent_points(
+                mask_center[::-1],  # Convert [y, x] to [x, y] for the tangent function
+                boundary_coords[:, ::-1],  # Convert all points to [x, y]
+                camera_position
+            )
         
-            # Mark the segments touching the boundary
+            # Extract border pixels between the tangent points
+            border_pixels = extract_segment_pixels(boundary_mask, pos_point, neg_point)
+        
+            # Define 8-connectivity offsets
+            offsets = [(-1, -1), (-1, 0), (-1, 1),
+                       (0, -1), (0, 0), (0, 1),
+                       (1, -1), (1, 0), (1, 1)]
+        
+            # Identify border segments
+            border_segments = set()
+            for x, y in border_pixels:
+                if contour_mask[y, x] > 0:  # Check if the pixel is on the contour
+                    # Check neighbors of the current border pixel
+                    for dy, dx in offsets:
+                        ny, nx = y + dy, x + dx
+                        # Skip out-of-bound pixels
+                        if ny < 0 or ny >= levels .shape[0] or nx < 0 or nx >= levels .shape[1]:
+                            continue
+
+                        segment_label = levels [ny, nx]
+                        if segment_label > level:  # Ignore masked-out levels 
+                            border_segments.add(segment_label)
+        
+            # Remove border segments from segmentation and color them
             for label in border_segments:
-                debug_image[labels == label] = [0, 0, 255]  # Mark segments in red
-                
-            debug_image[0 < contour_mask] = cv_colors.BLACK.value
+                frame_output[levels  == label] = cv2_color
+                levels [levels  == label] = level  # Remove the labeled segments
         
-            # Display the debug image
-            cv2.imshow("Boundary Mask with Tangent Points, Camera Position, and Segments", debug_image)
-            cv2.imshow("boundary_vis", boundary_vis)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            # Increment the level for the next color
+            level += 1
+        
+        # Final visualization
+        frame_output[0 < contour_mask] = cv_colors.BLACK.value
+        #cv2.imshow("Final Colored Segmentation", frame_output)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+        bounding_box_image = next_frame.copy()
+        #img_with_box  = next_frame.copy()
         
         
-        tangent_points, level_0_segments = find_visible_segments(camera_position, moving_mask, find_tangent_points)
-        draw_segmentation(camera_position, moving_mask, tangent_points, level_0_segments)
-        # Display the moving mask
-        #cv2.imshow('Segmentation', resize_to_match_height(frame_output, screen_height))
-
-        bounding_box_image = frame_output #next_frame.copy()
-        img_with_box  = next_frame.copy()
-
-        neighbors_dict = find_neighbors_within_mask(labels)
-        segments = []
-
-        lower_faces = []  # Initialize as an empty list
-        heights = []  # Similarly, initialize upper_faces if needed
-        colors = []
-
-        for label in range(1, num_labels):
-            mask = (labels == label)
-
-            if True: #moving_percentage >= 0.3:
-                # Find the bounding box for the current segment
-                ys, xs = np.where(mask)
-                if xs.size > 0 and ys.size > 0:
-                    x_min, x_max = np.min(xs), np.max(xs)
-                    y_min, y_max = np.min(ys), np.max(ys)
-                    top_point = (xs[np.argmin(ys)], y_min)  # Top-most point
-                    bottom_point = (xs[np.argmax(ys)], y_max)  # Bottom-most point
-                    left_point = (x_min, ys[np.argmin(xs)])  # Left-most point
-                    right_point = (x_max, ys[np.argmax(xs)])  # Right-most point
-
-                    plain_mask = mask #(plain_labels == label)
-                    points = np.argwhere(plain_mask > 0)  # Extract all non-zero pixel coordinates (row, col)
-                    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
-                
-                    if len(points) < 3:
-                        continue
-                        #raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
-                    mask_center = np.mean(points, axis=0)
-
-                    # Store segment data (bounding box, mask, etc.)
-                    segments.append({
-                        'label': label,
-                        'top_point': top_point,
-                        'bottom_point': bottom_point,
-                        'left_point': left_point,
-                        'right_point': right_point,
-                        'plain_mask' : mask,
-                        'mask_center': mask_center,
-                        'lower_face' : None,
-                        'z': 0,
-                        'mat': ipm_matrix,
-                        'level': 0,
-                        
-                        #'mask': mask,
-                        'height': None,  # Store the height of the segment
-                        'bottom_center': None,  # check IV
-                        'top_center': None,  # check IV
-                        'upper_face': None,
-                        'bottom': None,
-                        'top': None,
-                        'corner_ind': None,
-                        'cv2_color': None,
-                        'plt_color': None
-                    })
-
-        # Sort segments by their vertical position (y_min), bottom to top
-        segments = sorted(segments, key=lambda s: np.linalg.norm(np.array(s['mask_center']) - camera_position))
-
-        # Initialize ray-based colors
-        segment_colors = {}  # Store colors for each segment by label
-        camera_position = np.array(camera_position)
+        mask = (labels > 0)
+        ys, xs = np.where(mask)
         
-        # Process each segment and check rays for all points
-        for i, segment in enumerate(segments):
-            # Draw the segment with the assigned color
-            lower_face, upper_face = None, None
-            segment_mask = segment['plain_mask']
-            try:
-                # Compute 3D box
-                lower_face, upper_face = compute_3d_box_from_plain_mask_new(
-                    segment_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
-                )
-                #cv2_color = segment_colors[segment_label][0]
-                # draw_cube(
-                    # img_with_box,
-                    # lower_face.astype("int"),
-                    # upper_face.astype("int"),
-                    # color=cv2_color,
-                    # thickness=2,
-                # )
-                # print(f"OK segment ")
-            except Exception as e:
-                print(f"Error processing segment ")
+        if xs.size > 0 and ys.size > 0:
+            # Compute boundary points
+            x_min, x_max = np.min(xs), np.max(xs)
+            y_min, y_max = np.min(ys), np.max(ys)
+            top_point = (xs[np.argmin(ys)], y_min)
+            bottom_point = (xs[np.argmax(ys)], y_max)
+            left_point = (x_min, ys[np.argmin(xs)])
+            right_point = (x_max, ys[np.argmax(xs)])
+            
+            # Collect all points in the mask
+            points = np.argwhere(mask > 0)[:, [1, 0]]  # Switch to (x, y) format
+            
+            if len(points) < 3:
+                # Skip segments with fewer than 3 points
                 continue
-
-            #continue
-
+            
+            # Calculate mask center
+            mask_center = np.mean(points, axis=0)
+            
+            # Compute 3D box from plain mask
+            try:
+                lower_face, upper_face = compute_3d_box_from_plain_mask_new(
+                    mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
+                )
+            except Exception as e:
+                print(f"Error processing segment with label {label}: {e}")
+                continue
+            
+            # Validate computed faces
             if lower_face is not None and upper_face is not None:
 
-                bottom_face = map_points_to_BEV(lower_face, ipm_matrix)
-                top_face = map_points_to_BEV(upper_face, ipm_matrix)
-                bev_points_iv = to_iv(bottom_face)
-                top_iv = to_iv(top_face)
-                #print(bottom_face)
-                # A-B = 0-1
+                pts1 = np.float32(lower_face)
+                pts2 = np.float32([(20, 0), (20, 10), (0, 10), (0, 0)])
+                #pts2 = np.float32(to_iv(other_segment['bottom']))
 
-                avg_upper_face = upper_face
-                avg_lower_face = lower_face
-
-                # TODO adjust according to view angle
-                proj_height = np.linalg.norm(avg_lower_face[0] - avg_upper_face[0])
-                dist = np.linalg.norm(camera_position_bev - bev_points_iv[0])
-                height = proj_height * dist
+                # Generate the perspective transformation matrices
+                ipm_matrix = cv2.getPerspectiveTransform(pts1, pts2)
 
 
-                segment['height'] = height
-                segment['lower_face'] = avg_lower_face
-                segment['upper_face'] = avg_upper_face
-                segment['bottom'] = bev_points_iv
-                segment['top'] = top_iv
-
-        #cv2.imshow('img_with_box ', img_with_box)
 
 
-        for i, segment in enumerate(segments):
+                # Draw 3D cube
+                draw_cube(
+                    frame_output,
+                    lower_face.astype("int"),
+                    upper_face.astype("int"),
+                    color=list(cv_colors)[0 % len(cv_colors)].value,
+                    thickness=2
+                )
+                # Draw circles on the lower face points
+                for i, point in enumerate(lower_face):
+                    # Define the color for the circle
+                    color=list(cv_colors)[i % len(cv_colors)].value
             
+                    # Draw the circle
+                    cv2.circle(
+                        frame_output,
+                        center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                        radius=5,  # Circle radius
+                        color=color,
+                        thickness=-1  # Filled circle
+                    )
+                
+         # Final visualization
+        # frame_output[0 < contour_mask] = cv_colors.BLACK.value
+        # cv2.imshow("Final Colored Segmentation", frame_output)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
+        neighbors_dict = find_neighbors_within_mask(labels)
+        
+        # Initialize dictionaries and lists
+        segments = {}
+        lower_faces = []
+        heights = []
+        colors = []
+        
+        max_level = level - 1
+        
+        # Loop through levels
+        for curr_level in range(1, max_level + 1):
+            # Get unique segment labels in the current level
+            segments_in_level = np.unique(labels[(levels == curr_level)])
+            # print(f"Current Level: {curr_level}, Segments in Level: {segments_in_level}")
+        
+            # # Debug visualization of levels
+            # debug_image = (levels == curr_level).astype(np.uint8) * 255
+            # cv2.imshow(f"Segments in Level {curr_level}", debug_image)
+            #cv2.waitKey(0)  # Adjust pause duration as needed
+            
+            for label in segments_in_level:
+                mask = (labels == label)
+                ys, xs = np.where(mask)
+                
+                if xs.size > 0 and ys.size > 0:
+                    # Compute boundary points
+                    x_min, x_max = np.min(xs), np.max(xs)
+                    y_min, y_max = np.min(ys), np.max(ys)
+                    top_point = (xs[np.argmin(ys)], y_min)
+                    bottom_point = (xs[np.argmax(ys)], y_max)
+                    left_point = (x_min, ys[np.argmin(xs)])
+                    right_point = (x_max, ys[np.argmax(xs)])
+                    
+                    # Collect all points in the mask
+                    points = np.argwhere(mask > 0)[:, [1, 0]]  # Switch to (x, y) format
+                    
+                    if len(points) < 3:
+                        # Skip segments with fewer than 3 points
+                        continue
+                    
+                    # Calculate mask center
+                    mask_center = np.mean(points, axis=0)
+                    
+                    # Compute 3D box from plain mask
+                    try:
+                        lower_face, upper_face = compute_3d_box_from_plain_mask_new(
+                            mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
+                        )
+                    except Exception as e:
+                        print(f"Error processing segment with label {label}: {e}")
+                        continue
+                    
+                    # Validate computed faces
+                    if lower_face is not None and upper_face is not None:
+                        # Draw 3D cube
+                        draw_cube(
+                            bounding_box_image,
+                            lower_face.astype("int"),
+                            upper_face.astype("int"),
+                            color=list(cv_colors)[curr_level % len(cv_colors)].value,
+                            thickness=2
+                        )
+                        # Initialize segment dictionary
+                        segment = {
+                            'label': label,
+                            'top_point': top_point,
+                            'bottom_point': bottom_point,
+                            'left_point': left_point,
+                            'right_point': right_point,
+                            'plain_mask': mask,
+                            'mask_center': mask_center,
+                            'lower_face': None,
+                            'z': 0,
+                            'mat': ipm_matrix,
+                            'level': curr_level,
+                            'height': None,
+                            'bottom_center': None,
+                            'top_center': None,
+                            'upper_face': None,
+                            'bottom': None,
+                            'top': None,
+                            'corner_ind': None,
+                            'cv2_color': None,
+                            'plt_color': None
+                        }
+                        
+                        # Process bottom and top faces in BEV
+                        bottom_face = map_points_to_BEV(lower_face, ipm_matrix)
+                        top_face = map_points_to_BEV(upper_face, ipm_matrix)
+                        # bev_points_iv = to_iv(bottom_face)
+                        # top_iv = to_iv(top_face)
+                        
+                        # Calculate height
+                        proj_height = np.linalg.norm(lower_face[0] - upper_face[0])
+                        dist = np.linalg.norm(camera_position_bev - bottom_face[0])
+                        height = proj_height * dist
+                        
+                        # Update segment attributes
+                        segment['height'] = height
+                        segment['lower_face'] = lower_face
+                        segment['upper_face'] = upper_face
+                        
+                        if curr_level == 1:
+                            segment['bottom'] = bottom_face
+                            segment['top'] = top_face
+                        
+                        segments[label] = segment  # Append to segments dictionary
+        
+        # Analyze relationships between segments in different levels
+        # for curr_level in range(1, max_level + 1):
+            # for label, segment in segments.items():
+                # if segment['level'] == curr_level:
+                    # avg_lower_face = segment['lower_face']
 
-            z = 0
-            level = 0
-            height = segment['height']
+                        for other_level in range(1, curr_level):
+                            other_segments_in_level = np.unique(labels[(levels == other_level)])
+                            for other_label in other_segments_in_level:
+                                if other_label == label: continue
+                                other_segment = segments[other_label]
+                                other_upper_face = other_segment['upper_face']
+                                
+                                if lower_face is not None and other_upper_face is not None:
+                                    if faces_overlap(lower_face, other_upper_face, epsilon=1):
+                                        # Update colors and attributes for visualization
+                                        segment['cv2_color'] = other_segment['cv2_color']
+                                        segment['plt_color'] = other_segment['plt_color']
+                                        segment['z'] = other_segment['z'] + other_segment['height']
+                                        
+                                       
+                                        z = other_segment['z'] + other_segment['height']
+                                        level = other_segment['level'] + 1
+                                        pts1 = np.float32(other_segment['upper_face'])
+                                        pts2 = np.float32(other_segment['lower_face'])
+                                        #pts2 = np.float32(to_iv(other_segment['bottom']))
+            
+                                        # Generate the perspective transformation matrices
+                                        loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
+                                        superposed_mat = np.dot(loc_persp, other_segment['mat'])
+            
+                                        avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
 
-            segment_label =  segment['label']
+                                        segment['bottom'] = avg_bootom_iv
+                                        segment['mat'] = superposed_mat
+
+                                        break
+                                        
+                                # other_lower_face = other_segment['lower_face']
+                                # if lower_face is not None and other_lower_face is not None:
+                                    # if faces_overlap(lower_face, other_lower_face, epsilon = 1):
+                                        # cv2_color = other_segment['cv2_color']
+                                        # plt_color = other_segment['plt_color']
+            
+                                        # z = other_segment['z']
+                                        # #level = other_segment['level']
+                                        # superposed_mat = other_segment['mat']
+            
+                                        # avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
+                                        # #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+                                        # segment['bottom'] = avg_bootom_iv
+                                        # segment['mat'] = superposed_mat
+            
+                                        # break
+        
+        # Collect data for 3D rendering
+        for segment in segments.values():
             avg_lower_face = segment['lower_face']
             avg_upper_face = segment['upper_face']
-            avg_bootom_iv = segment['bottom']
-            avg_top_iv = segment['top']
-            superposed_mat = segment['mat']
-            cv2_color, plt_color = generate_random_color()
-            cv2_color = cv_colors.BLACK.value
+            bottom = segment['bottom']
+            height = segment['height']
+            level = segment['level']
             
-            #print(avg_bootom_iv)
-
-            if avg_bootom_iv is not None:# None: continue
-                #cv2_color = labels_to_color(segment_label)
-                #cv2_color, plt_color = generate_random_color()
-                # Loop through earlier segments (which are below in the image)
-                for j, other_segment in enumerate(segments):#[:i]):
-                    other_label = other_segment['label']
-                    if other_label == segment_label:
-                        continue
-
-   
-                    other_upper_face = other_segment['upper_face']
-                    if avg_lower_face is not None and other_upper_face is not None:
-                        if faces_overlap(avg_lower_face, other_upper_face, epsilon = 5):
-                            cv2_color = other_segment['cv2_color']
-                            plt_color = other_segment['plt_color']
-
-                            z = other_segment['z'] + other_segment['height']
-                            level = other_segment['level'] + 1
-                            pts1 = np.float32(other_segment['upper_face'])
-                            pts2 = np.float32(other_segment['lower_face'])
-                            #pts2 = np.float32(to_iv(other_segment['bottom']))
-
-                            # Generate the perspective transformation matrices
-                            loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                            superposed_mat = np.dot(loc_persp, other_segment['mat'])
-
-                            avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
-                            #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-
-                            break
-
-                    other_lower_face = other_segment['lower_face']
-                    if avg_lower_face is not None and other_lower_face is not None:
-                        if faces_overlap(avg_lower_face, other_lower_face, epsilon = 5):
-                            cv2_color = other_segment['cv2_color']
-                            plt_color = other_segment['plt_color']
-
-                            z = other_segment['z']
-                            level = other_segment['level']
-                            superposed_mat = other_segment['mat']
-
-                            avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
-                            #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-
-                            break
-
-                    # # Check if other_segment is a neighbor of segment
-                    # if other_label in neighbors_dict[segment_label]:
-                        # relative_positions = neighbors_dict[segment_label][
-                            # other_label]
-
-                        # if ('left' in relative_positions
-                                # or 'right' in relative_positions):
-                                # # or 'bottom-left' in relative_positions
-                                # # or 'bottom-right' in relative_positions):
-
-                            # cv2_color = other_segment['cv2_color']
-                            # plt_color = other_segment['plt_color']
-
-                            # z = other_segment['z']
-                            # level = other_segment['level']
-                            # superposed_mat = other_segment['mat']
-
-                            # avg_bootom_iv = to_iv(map_points_to_BEV(avg_lower_face, superposed_mat))
-                            # break
-    
-                # segment['top'] = avg_top_iv
+            if avg_lower_face is not None and avg_upper_face is not None and bottom is not None and level < 3:
+                avg_bottom_3d = [
+                    [x, -y, segment['z']] for x, y in segment['bottom']
+                ]
                 
-                cv2_color = list(cv_colors)[level % len(cv_colors)].value
-                
-                # TODO adjust according to view angle
-                proj_height = np.linalg.norm(avg_lower_face[0] - avg_upper_face[0])
-                dist = np.linalg.norm(camera_position_bev - avg_bootom_iv[0])
-                height = proj_height * dist
-
-                segment['bottom'] = avg_bootom_iv
-                segment['cv2_color'] = cv2_color
-                segment['plt_color'] = plt_color
-
-                segment['level'] = level
-                segment['height'] = height
-                segment['z'] = z
-                segment['mat'] = superposed_mat
-                #Extend avg_upper_face by adding height to each point
-                avg_bottom_3d = []
-                for point in avg_bootom_iv:
-                    x_2d, y_2d = point
-                    avg_bottom_3d.append(
-                        [x_2d, y_2d, z])  # Add height as the third coordinate
-    
-                avg_bottom_3d = np.array(
-                    avg_bottom_3d)  # Convert to a NumPy array if needed
-                #segment['bottom'] = avg_bottom
-                
+                lower_faces.append(np.array(avg_bottom_3d))
+                heights.append(height)
+                cv2_color = list(cv_colors)[segment['level'] % len(cv_colors)].value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-    
-                #Collect lower and upper faces for 3D rendering
-                if len(avg_bottom_3d) == 4:
-                    lower_faces.append(
-                        avg_bottom_3d
-                    )  # Lower face remains 2D (or use zeros for Z if required)
-                    heights.append(height)  # Now a 3D face
-                    colors.append(plt_color)
-
-
-            if avg_lower_face is not None and avg_upper_face is not None:
-                draw_cube(
-                bounding_box_image,
-                avg_lower_face.astype("int"),
-                avg_upper_face.astype("int"),
-                color=cv2_color,  #cv_colors.ORANGE.value,
-                thickness=2)
+                colors.append(plt_color)
+                
+                # # Draw 3D cube
+                # draw_cube(
+                    # bounding_box_image,
+                    # avg_lower_face.astype("int"),
+                    # avg_upper_face.astype("int"),
+                    # color=segment['cv2_color'],
+                    # thickness=2
+                # )
 
 
 
@@ -2904,7 +2902,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         out.write(resized_image)
         prev_frame = next_frame
 
-        cv2.imshow('Bounding Boxes', resized_image)
+        #cv2.imshow('Bounding Boxes', resized_image)
         #cv2.imshow('3D Boxes',img_with_box)
 
         if cv2.waitKey(30) & 0xFF == 27:  # Esc key to stop
@@ -2912,8 +2910,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        # if debug and len(lower_faces) > 1:# and frame_count == 80:
-            # draw_cubes_in_3d(lower_faces, heights, colors)
+        if debug and len(lower_faces) > 1:# and frame_count == 80:
+            draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)
 
     #cv2.imwrite('BoundingBoxes.png', segm_out)
     # Release resources

@@ -24,7 +24,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -2409,6 +2409,20 @@ def recursive_color_segment(image, segment_label, labels, segment_pixels, offset
                 stack.append((nx, ny))  # Add the neighbor to the stack for further exploration
 
 
+
+def validate_bottom_face_points(bottom_face, object_length, object_width):
+
+    if bottom_face is None:
+        return False
+
+    # Check that all x-coordinates are within [0, object_length]
+    x_valid = np.all((bottom_face[:, 0] >= 0) & (bottom_face[:, 0] <= object_length))
+
+    # Check that all y-coordinates are within [0, object_width]
+    y_valid = np.all((bottom_face[:, 1] >= 0) & (bottom_face[:, 1] <= object_width))
+
+    return x_valid and y_valid
+
 def main(video_path, draw_boundaries=True, debug=False):
 
     ipm_matrix, inv_mat, target_shape = generate_perspective_matrix(ratio = 0.75)
@@ -2663,12 +2677,15 @@ def main(video_path, draw_boundaries=True, debug=False):
             except Exception as e:
                 print(f"Error processing segment with label {label}: {e}")
                 continue
-            
+
+            object_length = 20
+            object_width = 10
+            object_height = 15
             # Validate computed faces
             if lower_face is not None and upper_face is not None:
 
                 pts1 = np.float32(lower_face)
-                pts2 = np.float32([(20, 0), (20, 10), (0, 10), (0, 0)])
+                pts2 = np.float32([(object_length, 0), (object_length, object_width), (0, object_width), (0, 0)])
                 #pts2 = np.float32(to_iv(other_segment['bottom']))
 
                 # Generate the perspective transformation matrices
@@ -2808,7 +2825,7 @@ def main(video_path, draw_boundaries=True, debug=False):
                         segment['lower_face'] = lower_face
                         segment['upper_face'] = upper_face
                         
-                        if curr_level == 1:
+                        if curr_level == 1 and validate_bottom_face_points(bottom_face, object_length, object_width):
                             segment['bottom'] = bottom_face
                             segment['top'] = top_face
                         
@@ -2848,28 +2865,29 @@ def main(video_path, draw_boundaries=True, debug=False):
                                         superposed_mat = np.dot(other_segment['mat'], loc_persp) #, other_segment['mat'])
             
                                         #avg_bootom_iv = map_points_to_BEV(lower_face, superposed_mat)
+                                        bottom_face = map_points_to_BEV(lower_face, superposed_mat)
+                                        if validate_bottom_face_points(bottom_face, object_length, object_width):
+                                            segment['bottom'] = bottom_face
+                                            segment['mat'] = superposed_mat
 
-                                        segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
-                                        segment['mat'] = superposed_mat
-
-                                        break
+                                            break
                                         
-                                other_lower_face = other_segment['lower_face']
-                                if lower_face is not None and other_lower_face is not None and other_bottom is not None:
-                                    if faces_overlap(lower_face, other_lower_face, epsilon = 1):
-                                        # cv2_color = other_segment['cv2_color']
-                                        # plt_color = other_segment['plt_color']
+                                # other_lower_face = other_segment['lower_face']
+                                # if lower_face is not None and other_lower_face is not None and other_bottom is not None:
+                                    # if faces_overlap(lower_face, other_lower_face, epsilon = 1):
+                                        # # cv2_color = other_segment['cv2_color']
+                                        # # plt_color = other_segment['plt_color']
             
-                                        # z = other_segment['z']
-                                        #level = other_segment['level']
-                                        superposed_mat = other_segment['mat']
+                                        # # z = other_segment['z']
+                                        # #level = other_segment['level']
+                                        # superposed_mat = other_segment['mat']
             
-                                        #avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
-                                        #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-                                        segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
-                                        segment['mat'] = superposed_mat
+                                        # #avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
+                                        # #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+                                        # segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
+                                        # segment['mat'] = superposed_mat
             
-                                        break
+                                        # break
         
         # Collect data for 3D rendering
         for segment in segments.values():
@@ -2921,30 +2939,6 @@ def main(video_path, draw_boundaries=True, debug=False):
     cap.release()
     out.release()
     cv2.destroyAllWindows()
-
-
-def draw_tracking_line(image,
-                       prev_box,
-                       cur_box,
-                       color=(0, 0, 255),
-                       thickness=2):
-    """
-    Draws a line between the centroids of the previous and current bounding boxes.
-    
-    Parameters:
-    - image: The image on which to draw the line.
-    - prev_box: The previous bounding box (as a list of four corner points).
-    - cur_box: The current bounding box (as a list of four corner points).
-    - color: The color of the line (default is green).
-    - thickness: The thickness of the line (default is 2).
-    """
-    # Compute centroids for both bounding boxes
-    prev_centroid = compute_bounding_box_centroid(prev_box)
-    cur_centroid = compute_bounding_box_centroid(cur_box)
-
-    # Draw the line between the centroids
-    cv2.line(image, (int(prev_centroid[0]), int(prev_centroid[1])),
-             (int(cur_centroid[0]), int(cur_centroid[1])), color, thickness)
 
 
 def resize_to_match_height(image, target_height):

@@ -1,3 +1,4 @@
+
 import cv2
 import numpy as np
 import os
@@ -23,7 +24,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -2527,8 +2528,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Display the moving mask
         #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
-        region_size = 2*5*10  #200 #100 #15  #10#30
-        ruler = 2*5 *10  #150 # 100 #20 #14
+        region_size = 5*10  #200 #100 #15  #10#30
+        ruler = 5 *10  #150 # 100 #20 #14
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -2819,54 +2820,56 @@ def main(video_path, draw_boundaries=True, debug=False):
                 # if segment['level'] == curr_level:
                     # avg_lower_face = segment['lower_face']
 
-                        for other_level in range(1, curr_level):
+                        for other_level in range(1, curr_level + 1):
                             other_segments_in_level = np.unique(labels[(levels == other_level)])
                             for other_label in other_segments_in_level:
                                 if other_label == label: continue
+                                if other_label not in segments: continue
                                 other_segment = segments[other_label]
                                 other_upper_face = other_segment['upper_face']
+                                other_bottom = other_segment['bottom']
                                 
-                                if lower_face is not None and other_upper_face is not None:
+                                if lower_face is not None and other_upper_face is not None and other_bottom is not None:
                                     if faces_overlap(lower_face, other_upper_face, epsilon=1):
                                         # Update colors and attributes for visualization
-                                        segment['cv2_color'] = other_segment['cv2_color']
-                                        segment['plt_color'] = other_segment['plt_color']
+                                        # segment['cv2_color'] = other_segment['cv2_color']
+                                        # segment['plt_color'] = other_segment['plt_color']
                                         segment['z'] = other_segment['z'] + other_segment['height']
                                         
                                        
-                                        z = other_segment['z'] + other_segment['height']
-                                        level = other_segment['level'] + 1
+                                        # z = other_segment['z'] + other_segment['height']
+                                        # level = other_segment['level'] + 1
                                         pts1 = np.float32(other_segment['upper_face'])
                                         pts2 = np.float32(other_segment['lower_face'])
                                         #pts2 = np.float32(to_iv(other_segment['bottom']))
             
                                         # Generate the perspective transformation matrices
                                         loc_persp = cv2.getPerspectiveTransform(pts1, pts2)
-                                        superposed_mat = np.dot(loc_persp, other_segment['mat'])
+                                        superposed_mat = np.dot(other_segment['mat'], loc_persp) #, other_segment['mat'])
             
-                                        avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
+                                        #avg_bootom_iv = map_points_to_BEV(lower_face, superposed_mat)
 
-                                        segment['bottom'] = avg_bootom_iv
+                                        segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
                                         segment['mat'] = superposed_mat
 
                                         break
                                         
-                                # other_lower_face = other_segment['lower_face']
-                                # if lower_face is not None and other_lower_face is not None:
-                                    # if faces_overlap(lower_face, other_lower_face, epsilon = 1):
+                                other_lower_face = other_segment['lower_face']
+                                if lower_face is not None and other_lower_face is not None and other_bottom is not None:
+                                    if faces_overlap(lower_face, other_lower_face, epsilon = 1):
                                         # cv2_color = other_segment['cv2_color']
                                         # plt_color = other_segment['plt_color']
             
                                         # z = other_segment['z']
-                                        # #level = other_segment['level']
-                                        # superposed_mat = other_segment['mat']
+                                        #level = other_segment['level']
+                                        superposed_mat = other_segment['mat']
             
-                                        # avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
-                                        # #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-                                        # segment['bottom'] = avg_bootom_iv
-                                        # segment['mat'] = superposed_mat
+                                        #avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
+                                        #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
+                                        segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
+                                        segment['mat'] = superposed_mat
             
-                                        # break
+                                        break
         
         # Collect data for 3D rendering
         for segment in segments.values():
@@ -2876,9 +2879,9 @@ def main(video_path, draw_boundaries=True, debug=False):
             height = segment['height']
             level = segment['level']
             
-            if avg_lower_face is not None and avg_upper_face is not None and bottom is not None and level < 3:
+            if avg_lower_face is not None and avg_upper_face is not None and bottom is not None:# and level < 3:
                 avg_bottom_3d = [
-                    [x, -y, segment['z']] for x, y in segment['bottom']
+                    [x, y, segment['z']] for x, y in segment['bottom']
                 ]
                 
                 lower_faces.append(np.array(avg_bottom_3d))

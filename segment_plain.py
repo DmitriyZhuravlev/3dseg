@@ -2542,8 +2542,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Display the moving mask
         #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
-        region_size = 5*10  #200 #100 #15  #10#30
-        ruler = 5 *10  #150 # 100 #20 #14
+        region_size = 2*5*10  #200 #100 #15  #10#30
+        ruler = 2*5 *10  #150 # 100 #20 #14
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -2646,8 +2646,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         bounding_box_image = next_frame.copy()
         #img_with_box  = next_frame.copy()
         
-        
-        mask = (labels > 0)
+        #segments_in_level = np.unique(labels[(levels == curr_level)]
+        mask = (levels > 0)
         ys, xs = np.where(mask)
         
         if xs.size > 0 and ys.size > 0:
@@ -2696,25 +2696,25 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                 # Draw 3D cube
                 draw_cube(
-                    frame_output,
+                    bounding_box_image,
                     lower_face.astype("int"),
                     upper_face.astype("int"),
-                    color=list(cv_colors)[0 % len(cv_colors)].value,
+                    color=list(cv_colors)[len(cv_colors) - 1].value,
                     thickness=2
                 )
                 # Draw circles on the lower face points
-                for i, point in enumerate(lower_face):
-                    # Define the color for the circle
-                    color=list(cv_colors)[i % len(cv_colors)].value
+                # for i, point in enumerate(lower_face):
+                    # # Define the color for the circle
+                    # color=list(cv_colors)[i % len(cv_colors)].value
             
-                    # Draw the circle
-                    cv2.circle(
-                        frame_output,
-                        center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                        radius=5,  # Circle radius
-                        color=color,
-                        thickness=-1  # Filled circle
-                    )
+                    # # Draw the circle
+                    # cv2.circle(
+                        # bounding_box_image,
+                        # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                        # radius=5,  # Circle radius
+                        # color=color,
+                        # thickness=-1  # Filled circle
+                    # )
                 
          # Final visualization
         # frame_output[0 < contour_mask] = cv_colors.BLACK.value
@@ -2731,6 +2731,18 @@ def main(video_path, draw_boundaries=True, debug=False):
         colors = []
         
         max_level = level - 1
+
+        avg_bottom_3d = [
+            [x, y, 0] for x, y in [(object_length, 0), (object_length, object_width), (0, object_width), (0, 0)]
+        ]
+        
+        lower_faces.append(np.array(avg_bottom_3d))
+        heights.append(object_height)
+        cv2_color = list(cv_colors)[len(cv_colors) - 1].value
+        plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+        colors.append(plt_color)
+        
+        #draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)
         
         # Loop through levels
         for curr_level in range(1, max_level + 1):
@@ -2931,7 +2943,7 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Call your function to draw cubes
-        if debug and len(lower_faces) > 1:# and frame_count == 80:
+        if debug and len(lower_faces) > 0:# and frame_count == 80:
             draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)
 
     #cv2.imwrite('BoundingBoxes.png', segm_out)

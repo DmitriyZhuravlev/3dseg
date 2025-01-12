@@ -38,8 +38,8 @@ def generate_random_color():
 def draw_3d_bounding_box(ax, lower_face, h, color=None):
     lower_face = np.array(lower_face)
 
-    if color is None:
-        _, color = generate_random_color()
+    # if color is None:
+        # _, color = generate_random_color()
 
     # Convert to 3D by adding z=0 for the lower face if in 2D
     if lower_face.shape[1] == 2:

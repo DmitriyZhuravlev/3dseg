@@ -24,7 +24,7 @@ os.makedirs(output_dir, exist_ok=True)
 # /home/dmytrozhuravlov/cv/data/
 # '/home/dzhura/mount/cv/data/
 # /home/dzhura/ComputerVision/data
-input_video_path = '/home/dzhura/ComputerVision/data/4kStreetViewCctv.mp4'
+input_video_path = '/home/dmytrozhuravlov/cv/data/4kStreetViewCctv.mp4'
 output_video_path = 'output_with_cubes.mp4'
 
 # vertical vp
@@ -2542,13 +2542,13 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Display the moving mask
         #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
-        region_size = 2*5*10  #200 #100 #15  #10#30
-        ruler = 2*5 *10  #150 # 100 #20 #14
+        region_size = 10#2*2*5*10  #200 #100 #15  #10#30
+        #ruler = 2*5 *10  #150 # 100 #20 #14
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                   algorithm=cv2.ximgproc.MSLIC,
-                                                  region_size=region_size,
-                                                  ruler=ruler)
+                                                  region_size=region_size)
+                                                  #ruler=ruler)
         slic.iterate(slic_iterations)
 
         labels = slic.getLabels() + 1
@@ -2686,10 +2686,12 @@ def main(video_path, draw_boundaries=True, debug=False):
 
                 pts1 = np.float32(lower_face)
                 pts2 = np.float32([(object_length, 0), (object_length, object_width), (0, object_width), (0, 0)])
-                #pts2 = np.float32(to_iv(other_segment['bottom']))
+                pts3 =np.float32(upper_face)
 
                 # Generate the perspective transformation matrices
                 ipm_matrix = cv2.getPerspectiveTransform(pts1, pts2)
+                inv_ipm_matrix = cv2.getPerspectiveTransform(pts2, pts1)
+                top_inv_ipm_matrix = cv2.getPerspectiveTransform(pts1, pts3)
 
 
 
@@ -2744,6 +2746,7 @@ def main(video_path, draw_boundaries=True, debug=False):
         
         #draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)
         
+        # down to top
         # Loop through levels
         for curr_level in range(1, max_level + 1):
             # Get unique segment labels in the current level
@@ -2818,7 +2821,8 @@ def main(video_path, draw_boundaries=True, debug=False):
                             'top': None,
                             'corner_ind': None,
                             'cv2_color': None,
-                            'plt_color': None
+                            'plt_color': None,
+                            'used': False
                         }
                         
                         # Process bottom and top faces in BEV
@@ -2828,9 +2832,15 @@ def main(video_path, draw_boundaries=True, debug=False):
                         # top_iv = to_iv(top_face)
                         
                         # Calculate height
-                        proj_height = np.linalg.norm(lower_face[0] - upper_face[0])
-                        dist = np.linalg.norm(camera_position_bev - bottom_face[0])
-                        height = proj_height * dist
+                        proj_height = np.linalg.norm(lower_face[0] - upper_face[0])  # height
+                        proj_bottom = map_points_to_BEV([bottom_face[0]], inv_ipm_matrix)
+                        proj_top = map_points_to_BEV([proj_bottom[0]], top_inv_ipm_matrix)
+                        
+                        
+                        #dist = np.linalg.norm(camera_position_bev - bottom_face[0])
+                        full_height = np.linalg.norm(proj_bottom[0] - proj_top[0]) # object_height
+
+                        height = object_height * proj_height / full_height
                         
                         # Update segment attributes
                         segment['height'] = height
@@ -2840,14 +2850,10 @@ def main(video_path, draw_boundaries=True, debug=False):
                         if curr_level == 1 and validate_bottom_face_points(bottom_face, object_length, object_width):
                             segment['bottom'] = bottom_face
                             segment['top'] = top_face
+                            segment['used'] = True
                         
                         segments[label] = segment  # Append to segments dictionary
         
-        # Analyze relationships between segments in different levels
-        # for curr_level in range(1, max_level + 1):
-            # for label, segment in segments.items():
-                # if segment['level'] == curr_level:
-                    # avg_lower_face = segment['lower_face']
 
                         for other_level in range(1, curr_level + 1):
                             other_segments_in_level = np.unique(labels[(levels == other_level)])
@@ -2857,8 +2863,9 @@ def main(video_path, draw_boundaries=True, debug=False):
                                 other_segment = segments[other_label]
                                 other_upper_face = other_segment['upper_face']
                                 other_bottom = other_segment['bottom']
+                                used = other_segment['used']
                                 
-                                if lower_face is not None and other_upper_face is not None and other_bottom is not None:
+                                if used and lower_face is not None and other_upper_face is not None and other_bottom is not None:
                                     if faces_overlap(lower_face, other_upper_face, epsilon=1):
                                         # Update colors and attributes for visualization
                                         # segment['cv2_color'] = other_segment['cv2_color']
@@ -2881,42 +2888,121 @@ def main(video_path, draw_boundaries=True, debug=False):
                                         if validate_bottom_face_points(bottom_face, object_length, object_width):
                                             segment['bottom'] = bottom_face
                                             segment['mat'] = superposed_mat
+                                            
+                                            proj_height = np.linalg.norm(lower_face[0] - upper_face[0])  # height
+                                            proj_bottom = map_points_to_BEV([bottom_face[0]], inv_ipm_matrix)
+                                            proj_top = map_points_to_BEV([proj_bottom[0]], top_inv_ipm_matrix)
+                                            
+                                            
+                                            #dist = np.linalg.norm(camera_position_bev - bottom_face[0])
+                                            full_height = np.linalg.norm(proj_bottom[0] - proj_top[0]) # object_height
+                                
+                                            height = object_height * proj_height / full_height
+                                            
+                                            segment['height'] = height
+                                            segment['used'] = True
 
                                             break
                                         
-                                # other_lower_face = other_segment['lower_face']
-                                # if lower_face is not None and other_lower_face is not None and other_bottom is not None:
-                                    # if faces_overlap(lower_face, other_lower_face, epsilon = 1):
-                                        # # cv2_color = other_segment['cv2_color']
-                                        # # plt_color = other_segment['plt_color']
-            
-                                        # # z = other_segment['z']
-                                        # #level = other_segment['level']
-                                        # superposed_mat = other_segment['mat']
-            
-                                        # #avg_bootom_iv = to_iv(map_points_to_BEV(lower_face, superposed_mat))
-                                        # #top_iv = to_iv(map_points_to_BEV(avg_upper_face, superposed_mat))
-                                        # segment['bottom'] = map_points_to_BEV(lower_face, superposed_mat)
-                                        # segment['mat'] = superposed_mat
-            
-                                        # break
+        # Top to down
+        for curr_level in range(max_level, 0, -1):  # Iterate from top to bottom
+            segments_in_level = np.unique(labels[(levels == curr_level)])
+
+            for label in segments_in_level:
+                if label not in segments: continue
+                segment = segments[label]
+                upper_face = segment['upper_face']
+                lower_face = segment['lower_face']
+                bottom_face = segment['bottom']
+                used = segment['used']
+                
+
+                if not used and upper_face is not None and lower_face is not None: #not validate_bottom_face_points(bottom_face, object_length, object_width):
+                    # Iterate over all lower levels
+                    for other_level in range(curr_level, max_level + 1):
+                        other_segments_in_level = np.unique(labels[(levels == other_level)])
+                        for other_label in other_segments_in_level:
+                            if other_label == label:
+                                continue
+                            if other_label not in segments:
+                                continue
+
+                            other_segment = segments[other_label]
+                            other_bottom_face = other_segment['bottom']
+                            other_lower_face = other_segment['lower_face']
+                            other_used = other_segment['used']
+
+                            if other_used and other_lower_face is not None and other_bottom_face is not None:
+                                # Check if the upper face overlaps with the lower face of another segment
+                                if faces_overlap(upper_face, other_lower_face, epsilon=1):
+                                    # Update perspective matrix
+                                    pts1 = np.float32(segment['upper_face'])
+                                    pts2 = np.float32(segment['lower_face'])
+                                    loc_persp = cv2.getPerspectiveTransform(pts2, pts1)
+                                    superposed_mat = np.dot(other_segment['mat'], loc_persp)
+
+                                    # Compute new bottom face in BEV
+                                    bottom_face = map_points_to_BEV(lower_face, superposed_mat)
+
+                                    if validate_bottom_face_points(bottom_face, object_length, object_width):
+
+                                        # Calculate height
+                                        proj_height = np.linalg.norm(upper_face[0] - lower_face[0])  # height
+                                        proj_bottom = map_points_to_BEV([bottom_face[0]], inv_ipm_matrix)
+                                        proj_top = map_points_to_BEV([proj_bottom[0]], top_inv_ipm_matrix)
+
+                                        full_height = np.linalg.norm(proj_bottom[0] - proj_top[0])  # object_height
+                                        height = object_height * proj_height / full_height
+                                        if True: #other_segment['z'] - height >= 0:
+                                            segment['bottom'] = bottom_face
+                                            segment['mat'] = superposed_mat
+
+                                            # Update height and z
+                                            segment['height'] = height
+                                            segment['z'] = other_segment['z'] - height
+                                            #segment['level'] = -1
+                                            segment['used'] = True
+                                            print("Found new box!!!")
+    
+                                            break
+
+        
         
         # Collect data for 3D rendering
         for segment in segments.values():
             avg_lower_face = segment['lower_face']
             avg_upper_face = segment['upper_face']
             bottom = segment['bottom']
+            
+
+            
+            #segment['height'] = height
             height = segment['height']
             level = segment['level']
             
             if avg_lower_face is not None and avg_upper_face is not None and bottom is not None:# and level < 3:
+
+                # proj_height = np.linalg.norm(avg_lower_face[0] - avg_upper_face[0])  # height
+                # proj_bottom = map_points_to_BEV([bottom_face[0]], inv_ipm_matrix)
+                # proj_top = map_points_to_BEV([bottom[0]], top_inv_ipm_matrix)
+                
+                
+                # #dist = np.linalg.norm(camera_position_bev - bottom_face[0])
+                # full_height = np.linalg.norm(proj_bottom[0] - proj_top[0]) # object_height
+    
+                # height = object_height * proj_height / full_height
+            
                 avg_bottom_3d = [
                     [x, y, segment['z']] for x, y in segment['bottom']
                 ]
                 
                 lower_faces.append(np.array(avg_bottom_3d))
                 heights.append(height)
-                cv2_color = list(cv_colors)[segment['level'] % len(cv_colors)].value
+                if level == -1: 
+                    cv2_color = cv_colors.RED.value
+                else:
+                    cv2_color = list(cv_colors)[segment['level'] % len(cv_colors)].value
+
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 

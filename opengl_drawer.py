@@ -133,7 +133,7 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
     # Create subplots
     ax_img = fig.add_subplot(121)  # Left subplot for the bounding_box_image
     ax_3d = fig.add_subplot(122, projection='3d')  # Right subplot for the 3D bounding boxes
-    ax_3d.view_init(elev=90, azim=-90)  # Align axes like in a mathematical system
+    #ax_3d.view_init(elev=90, azim=-90)  # Align axes like in a mathematical system
 
     while True:
         # Left: Display the bounding_box_image

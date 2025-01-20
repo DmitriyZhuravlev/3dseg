@@ -2438,10 +2438,11 @@ def recursive_color_segment(image, segment_label, labels, segment_pixels, offset
 
 
 
-def validate_bottom_face_points(bottom_face, object_length, object_width):
+def validate_bottom_face_points_old(bottom_face, object_length, object_width):
 
     if bottom_face is None:
         return False
+    #return True
 
     # Check that all x-coordinates are within [0, object_length]
     x_valid = np.all((bottom_face[:, 0] >= 0) & (bottom_face[:, 0] <= object_length))
@@ -2450,6 +2451,20 @@ def validate_bottom_face_points(bottom_face, object_length, object_width):
     y_valid = np.all((bottom_face[:, 1] >= 0) & (bottom_face[:, 1] <= object_width))
 
     return x_valid and y_valid
+    
+def validate_bottom_face_points(bottom_face, object_length, object_width, epsilon=0.0):
+    if bottom_face is None:
+        return False
+
+    epsilon=object_length/100
+    # Check if any x-coordinate is within the allowed bounds
+    x_inside = np.any((bottom_face[:, 0] >= -epsilon) & (bottom_face[:, 0] <= object_length + epsilon))
+
+    # Check if any y-coordinate is within the allowed bounds
+    y_inside = np.any((bottom_face[:, 1] >= -epsilon) & (bottom_face[:, 1] <= object_width + epsilon))
+
+    # Return True if any point is inside the valid boundary
+    return x_inside and y_inside
 
 # Recursive DFS function to process segments
 def process_segment1(level, lower_face, upper_face, label, labels, z, mat, segments, object_length, object_width, object_height, inv_ipm_matrix, top_inv_ipm_matrix, neighbors_dict, max_depth):
@@ -2836,13 +2851,14 @@ def process_segments_bfs(
             if neighbor_label in segments and segments[neighbor_label]['used']:
                 continue
 
+            relative_positions = neighbors_dict[current_label][neighbor_label]
             mask = (labels == neighbor_label)
             neighbor_lower_face, neighbor_upper_face = get_projected_box(
                 mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
             )
 
             # Down-to-top processing
-            if mode == "down_to_top" and faces_overlap(current_upper_face, neighbor_lower_face, region_size):
+            if mode == "down_to_top" and ({'top', 'top-left', 'top-right'} & set(relative_positions))  and faces_overlap(current_upper_face, neighbor_lower_face, region_size):
                 pts1 = np.float32(current_upper_face)
                 pts2 = np.float32(current_lower_face)
                 local_persp = cv2.getPerspectiveTransform(pts1, pts2)
@@ -2852,7 +2868,7 @@ def process_segments_bfs(
                 queue.append((neighbor_label, "down_to_top", level + 1, current_z + height, neighbor_mat, neighbor_lower_face, neighbor_upper_face))
 
             # Top-to-down processing
-            elif mode == "top_to_down" and faces_overlap(neighbor_upper_face, current_lower_face, region_size):
+            elif mode == "top_to_down" and ({'bottom', 'bottom-left', 'bottom-right'} & set(relative_positions)) and faces_overlap(neighbor_upper_face, current_lower_face, region_size):
                 pts1 = np.float32(neighbor_upper_face)
                 pts2 = np.float32(neighbor_lower_face)
                 local_persp = cv2.getPerspectiveTransform(pts2, pts1)
@@ -2867,7 +2883,7 @@ def process_segments_bfs(
                 queue.append((neighbor_label, "top_to_down", level - 1, current_z - neighbor_height, neighbor_mat, neighbor_lower_face, neighbor_upper_face))
 
             # Down-to-top processing
-            elif mode == "same" and faces_overlap(current_lower_face, neighbor_lower_face, region_size):
+            elif mode == "same" and ({'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'} & set(relative_positions)) and faces_overlap(current_lower_face, neighbor_lower_face, region_size):
                 # Add neighbor to the queue for BFS
                 queue.append((neighbor_label, "same", level, current_z, current_mat, neighbor_lower_face, neighbor_upper_face))
 
@@ -2926,6 +2942,20 @@ def calc_height(lower_face, upper_face, bottom_face, inv_ipm_matrix, top_inv_ipm
 
     return height
 
+def reflect_segment(lower_face, object_width):
+    """
+    Reflect the lower face of a segment across the object_width/2 axis.
+    
+    Parameters:
+        lower_face (np.array): Array of points representing the lower face of the segment.
+        object_width (float): The width of the object to determine the axis of symmetry.
+
+    Returns:
+        np.array: Reflected lower face.
+    """
+    reflected_face = lower_face.copy()
+    reflected_face[:, 1] = object_width - lower_face[:, 1]  # Reflect y-coordinates
+    return reflected_face
 
 def main(video_path, draw_boundaries=True, debug=False):
 
@@ -3046,8 +3076,8 @@ def main(video_path, draw_boundaries=True, debug=False):
         # Display the moving mask
         #cv2.imshow('Moving Mask', resize_to_match_height(moving_mask, screen_height))
 
-        region_size = 100 #300 #2*2*5*10  #200 #100 #15  #10#30
-        ruler = 50 #100  #150 # 100 #20 #14
+        region_size = 40 #2*2*2*5*10 #300 #2*2*5*10  #200 #100 #15  #10#30
+        ruler = 30 #2*2*5*10 #100  #150 # 100 #20 #14
 
         slic = cv2.ximgproc.createSuperpixelSLIC(next_frame,
                                                   algorithm=cv2.ximgproc.MSLIC,
@@ -3181,6 +3211,21 @@ def main(video_path, draw_boundaries=True, debug=False):
                 color=list(cv_colors)[len(cv_colors) - 1].value,
                 thickness=3
             )
+            
+            # Draw circles on the lower face points
+            for i, point in enumerate(lower_face):
+                # Define the color for the circle
+                color=list(cv_colors)[i % len(cv_colors)].value
+        
+                # Draw the circle
+                cv2.circle(
+                    bounding_box_image,
+                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    radius=5,  # Circle radius
+                    color=color,
+                    thickness=-1  # Filled circle
+                )
+                
 
 
         neighbors_dict = find_neighbors_within_mask(labels)
@@ -3204,6 +3249,23 @@ def main(video_path, draw_boundaries=True, debug=False):
         cv2_color = list(cv_colors)[len(cv_colors) - 1].value
         plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
         colors.append(plt_color)
+      
+        
+        for label in np.unique(labels):
+            mask = (labels == label)
+            # Extract the lower and upper faces for the segment
+            lower_face, upper_face = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+                
+            # Validate computed faces
+            if lower_face is not None and upper_face is not None:
+                # Draw 3D cube
+                draw_cube(
+                    bounding_box_image,
+                    lower_face.astype("int"),
+                    upper_face.astype("int"),
+                    color=cv_colors.BLACK.value,
+                    thickness=2
+                )
 
         #draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)
         ground_level = 1
@@ -3277,6 +3339,12 @@ def main(video_path, draw_boundaries=True, debug=False):
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
+                # Reflect the lower face and add the reflected data
+                reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
+                lower_faces.append(reflected_bottom)
+                heights.append(height)  # Symmetric object, height remains the same
+                colors.append(plt_color)  # Use the same color for symmetry
+                
                 # Draw 3D cube
                 draw_cube(
                     bounding_box_image,
@@ -3300,8 +3368,8 @@ def main(video_path, draw_boundaries=True, debug=False):
             break
 
         # Blend the overlay with the original image to add opacity
-        opacity = 0.5  # Adjust opacity level (0.0 to 1.0)
-        cv2.addWeighted(bounding_box_image, opacity, next_frame, 1 - opacity, 0, bounding_box_image)
+        # opacity = 0.5  # Adjust opacity level (0.0 to 1.0)
+        # cv2.addWeighted(bounding_box_image, opacity, next_frame, 1 - opacity, 0, bounding_box_image)
         # Call your function to draw cubes
         if debug and len(lower_faces) > 0:# and frame_count == 80:
             draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors)

@@ -38,8 +38,8 @@ def generate_random_color():
 def draw_3d_bounding_box(ax, lower_face, h, color=None):
     lower_face = np.array(lower_face)
 
-    # if color is None:
-        # _, color = generate_random_color()
+    if color is None:
+        _, color = generate_random_color()
 
     # Convert to 3D by adding z=0 for the lower face if in 2D
     if lower_face.shape[1] == 2:
@@ -157,9 +157,9 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
         plt.pause(0.001)  # Small delay for interactive updates
 
         # Break the loop if a key is pressed
-        print("Press any key to render new boxes...")
-        if plt.waitforbuttonpress():
-            break
+        # print("Press any key to render new boxes...")
+        # if plt.waitforbuttonpress():
+            # break
 
     plt.ioff()  # Turn off interactive mode
     plt.close(fig)  # Close the figure when done

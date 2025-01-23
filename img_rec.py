@@ -23,8 +23,8 @@ line4 = [[1082, 810], [668, 240]]
 #line4 = [[2452, 442], [1900, 24]]
 
 # right horizontal vp 
-line5 = [[954, 1591], [2224, 1067]]
-line6 = [[934, 1176], [2230, 706]]
+line5 = [[1128, 1574], [2320, 1156]]
+line6 = [[1098, 874], [2458, 488]]
 
 # Define input lines as NumPy arrays
 lines = {
@@ -742,7 +742,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         # Apply SLIC segmentation
         slic = cv2.ximgproc.createSuperpixelSLIC(
             color_image_for_slic,
-            #algorithm=cv2.ximgproc.MSLIC,
+            algorithm=cv2.ximgproc.MSLIC,
             region_size=region_size,
             ruler=ruler
         )
@@ -778,7 +778,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
         height, width = current_image.shape[:2]
         camera_position = np.float32([width/3, height])
-        level = 1  # Start from level 0
+        level = 0  # Start from level 0
         levels_image = color_image_for_slic.copy()
         
         while np.any(levels > 0):# and level < 1:  # Continue until all segments are marked
@@ -843,10 +843,10 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         colors = []
 
         box_image = color_image.copy()
-        mask = (levels >= 1)
-        object_length = 12
-        object_width = 3.5
-        object_height = 3.5
+        mask = (levels > 0)
+        object_length = 21
+        object_width = 7
+        object_height = 7
         
         lower_face, upper_face = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
@@ -916,7 +916,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 if lower_face is not None and upper_face is not None:
                     # Draw 3D cube
                     draw_cube(
-                        box_image,
+                        labels_combined_color,
                         lower_face.astype("int"),
                         upper_face.astype("int"),
                         color=cv_colors.BLACK.value,
@@ -924,7 +924,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     )
     
 
-            ground_level = 1
+            ground_level = 0
             segments_in_level = np.unique(labels[(levels == ground_level)])
     
             max_depth = ground_level
@@ -998,16 +998,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         colors.append(plt_color)  # Use the same color for symmetry
                     
                     # Draw 3D cube
-                    # draw_cube(
-                        # box_image,
-                        # avg_lower_face.astype("int"),
-                        # avg_upper_face.astype("int"),
-                        # color=cv2_color,
-                        # thickness=2
-                    # )
-                    
                     draw_cube(
-                        levels_image,
+                        labels_combined_color,
                         avg_lower_face.astype("int"),
                         avg_upper_face.astype("int"),
                         color=cv2_color,
@@ -1035,14 +1027,14 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
 
 # Example usage
-reference_image_path = "/home/dzhura/ComputerVision/data/img/reference.JPG"  # Replace with your reference image path
+reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
 # folder_path = "/home/dmytrozhuravlov/cv/data/img/out/"  # Replace with your folder path
 # output_path = "/home/dmytrozhuravlov/cv/data/img/out/out"  # Replace with your output folder path
 
 # reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
-folder_path = "/home/dzhura/ComputerVision/data/img/test/"  # Replace with your folder path
-output_path = "/home/dzhura/ComputerVision/data/img/test/out"  # Replace with your output folder path
+folder_path = "/home/dmytrozhuravlov/cv/data/img/test/"  # Replace with your folder path
+output_path = "/home/dmytrozhuravlov/cv/data/img/test/out"  # Replace with your output folder path
 
 threshold_value = 25  # Adjust threshold value as needed
 
-process_images(reference_image_path, folder_path, output_path, region_size=40*2, ruler=30*2, method="otsu")
+process_images(reference_image_path, folder_path, output_path, region_size=40, ruler=30, method="otsu")

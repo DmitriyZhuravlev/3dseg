@@ -524,7 +524,7 @@ def validate_bottom_face_points(bottom_face, object_length, object_width, epsilo
     if bottom_face is None:
         return False
 
-    epsilon=object_length/100
+    epsilon=object_length/1000
     # Check if any x-coordinate is within the allowed bounds
     x_inside = np.any((bottom_face[:, 0] >= -epsilon) & (bottom_face[:, 0] <= object_length + epsilon))
 
@@ -619,6 +619,10 @@ def process_segments_bfs(
                 current_lower_face, current_upper_face, bottom_face,
                 inv_ipm_matrix, top_inv_ipm_matrix, object_height
             )
+            epsilon=object_height/1000
+            if -epsilon > current_z + height or object_height + epsilon < current_z + height:
+                continue
+
             segment.update({'bottom': bottom_face, 'height': height, 'used': True})
             segments[current_label] = segment
 
@@ -1027,13 +1031,13 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
 
 # Example usage
-reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
+reference_image_path = "/home/dzhura/ComputerVision/data/img/reference.JPG"  # Replace with your reference image path
 # folder_path = "/home/dmytrozhuravlov/cv/data/img/out/"  # Replace with your folder path
 # output_path = "/home/dmytrozhuravlov/cv/data/img/out/out"  # Replace with your output folder path
 
 # reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
-folder_path = "/home/dmytrozhuravlov/cv/data/img/test/"  # Replace with your folder path
-output_path = "/home/dmytrozhuravlov/cv/data/img/test/out"  # Replace with your output folder path
+folder_path = "/home/dzhura/ComputerVision/data/img/test/"  # Replace with your folder path
+output_path = "/home/dzhura/ComputerVision/data/img/test/out"  # Replace with your output folder path
 
 threshold_value = 25  # Adjust threshold value as needed
 

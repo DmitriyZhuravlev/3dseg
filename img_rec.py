@@ -519,6 +519,90 @@ def faces_overlap(face1, face2, region_size, k=0.1):
 
     # Check if the buffered polygons intersect (overlap)
     return p1_buffered.intersects(p2_buffered)
+    
+# Utility function to check face overlap in BEV and return intersection size
+def faces_overlap_area(face1, face2, region_size, k=0.1):
+    """
+    Compute the overlap between two faces in BEV and return the intersection size.
+    
+    Args:
+        face1 (list): Coordinates of the first face corners [(x1, y1), (x2, y2), ...].
+        face2 (list): Coordinates of the second face corners [(x1, y1), (x2, y2), ...].
+        region_size (float): Approximate size of the region, used for scaling epsilon.
+        k (float): Scaling factor for epsilon (default: 0.1).
+        
+    Returns:
+        float: Intersection size (area of overlap) between the two faces.
+    """
+    # Compute epsilon based on region_size
+    epsilon = k * region_size
+
+    # If either face is None, return no intersection
+    if face1 is None or face2 is None:
+        return 0.0
+
+    # Define polygons for each face based on the corner points
+    p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
+    p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
+
+    # Expand the polygons slightly by epsilon
+    p1_buffered = p1.buffer(epsilon)
+    p2_buffered = p2.buffer(epsilon)
+
+    # Check if the buffered polygons intersect
+    if p1_buffered.intersects(p2_buffered):
+        # Calculate the intersection polygon
+        intersection = p1_buffered.intersection(p2_buffered)
+        # Return the area of the intersection
+        return intersection.area
+
+    # If no intersection, return 0.0
+    return 0.0
+    
+# Utility function to check face overlap in BEV and return IoU
+def faces_overlap_iou(face1, face2, region_size, k=0.1):
+    """
+    Compute the Intersection over Union (IoU) between two faces in BEV.
+
+    Args:
+        face1 (list): Coordinates of the first face corners [(x1, y1), (x2, y2), ...].
+        face2 (list): Coordinates of the second face corners [(x1, y1), (x2, y2), ...].
+        region_size (float): Approximate size of the region, used for scaling epsilon.
+        k (float): Scaling factor for epsilon (default: 0.1).
+
+    Returns:
+        float: IoU between the two faces (0.0 if no overlap or invalid inputs).
+    """
+    # Compute epsilon based on region_size
+    epsilon = k * region_size
+
+    # If either face is None, return IoU of 0.0
+    if face1 is None or face2 is None:
+        return 0.0
+
+    # Define polygons for each face based on the corner points
+    p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
+    p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
+
+    # Expand the polygons slightly by epsilon
+    p1_buffered = p1.buffer(epsilon)
+    p2_buffered = p2.buffer(epsilon)
+
+    # Check if the buffered polygons intersect
+    if p1_buffered.intersects(p2_buffered):
+        # Calculate the intersection polygon
+        intersection = p1_buffered.intersection(p2_buffered)
+        intersection_area = intersection.area
+
+        # Calculate the union polygon
+        union = p1_buffered.union(p2_buffered)
+        union_area = union.area
+
+        # Return the IoU (intersection area / union area)
+        return intersection_area / union_area
+
+    # If no intersection, IoU is 0.0
+    return 0.0
 
 def validate_bottom_face_points(bottom_face, object_length, object_width, epsilon=0.0):
     if bottom_face is None:
@@ -565,7 +649,7 @@ def map_points_to_BEV(points, ipm_matrix):
     return bev_points
 
 
-def process_segments_bfs(
+def process_segments_bfs_static(
     start_label,
     lower_face,
     upper_face,
@@ -676,6 +760,123 @@ def process_segments_bfs(
 
     return max_depth, segments
 
+def process_segments_bfs(
+    start_label,
+    lower_face,
+    upper_face,
+    labels,
+    z,
+    mat,
+    object_length,
+    object_width,
+    object_height,
+    inv_ipm_matrix,
+    top_inv_ipm_matrix,
+    neighbors_dict,
+    region_size
+):
+    # Queue for BFS: stores tuples (current_label, mode, level, z, mat)
+    queue = deque()
+    queue.append((start_label, "down_to_top", 0, z, mat, lower_face, upper_face))
+
+    segments = {}
+    max_depth = 0
+
+    while queue:
+        current_label, mode, level, current_z, current_mat, current_lower_face, current_upper_face = queue.popleft()
+        max_depth = max(max_depth, level)
+
+        # Skip if already processed
+        if current_label in segments and segments[current_label]['used']:
+            continue
+
+        # Initialize the current segment if not already done
+        if current_label not in segments:
+            segment = {
+                'level': level,
+                'label': current_label,
+                'lower_face': current_lower_face,
+                'upper_face': current_upper_face,
+                'height': None,
+                'z': current_z,
+                'mat': current_mat,
+                'used': False,
+            }
+
+            if current_lower_face is None:
+                continue
+
+            # Map lower face (bottom) to BEV and validate
+            bottom_face = map_points_to_BEV(current_lower_face, current_mat)
+            if not validate_bottom_face_points(bottom_face, object_length, object_width):
+                continue  # Skip invalid bottom face
+
+            # Compute height and finalize segment data
+            height = calc_height(
+                current_lower_face, current_upper_face, bottom_face,
+                inv_ipm_matrix, top_inv_ipm_matrix, object_height
+            )
+            epsilon = object_height / 1000
+            if -epsilon > current_z + height or object_height + epsilon < current_z + height:
+                continue
+
+            segment.update({'bottom': bottom_face, 'height': height, 'used': True})
+            segments[current_label] = segment
+
+        # Collect and sort neighbors by overlap area
+        neighbors = []
+        for neighbor_label in neighbors_dict.get(current_label, []):
+            if neighbor_label in segments and segments[neighbor_label]['used']:
+                continue
+
+            relative_positions = neighbors_dict[current_label][neighbor_label]
+            mask = (labels == neighbor_label)
+            neighbor_lower_face, neighbor_upper_face = get_projected_box(
+                mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
+            )
+
+            if ({'top', 'top-left', 'top-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(current_upper_face, neighbor_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "down_to_top", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+            elif  ({'bottom', 'bottom-left', 'bottom-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(neighbor_upper_face, current_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "top_to_down", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+            elif ({'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(current_lower_face, neighbor_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "same", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+        # Sort neighbors by overlap area (descending)
+        neighbors.sort(key=lambda x: x[4], reverse=True)
+
+        # Add sorted neighbors to the queue
+        for neighbor_label, next_mode, neighbor_lower_face, neighbor_upper_face, _ in neighbors:
+            pts1 = np.float32(current_upper_face if next_mode == "down_to_top" else neighbor_upper_face)
+            pts2 = np.float32(current_lower_face if next_mode == "down_to_top" else neighbor_lower_face)
+            local_persp = cv2.getPerspectiveTransform(pts1, pts2)
+            neighbor_mat = np.dot(current_mat, local_persp)
+
+            height = calc_height(
+                neighbor_lower_face, neighbor_upper_face, map_points_to_BEV(neighbor_lower_face, current_mat),
+                inv_ipm_matrix, top_inv_ipm_matrix, object_height
+            )
+
+            queue.append((neighbor_label, next_mode, level + (1 if next_mode == "down_to_top" else -1), current_z + height, neighbor_mat, neighbor_lower_face, neighbor_upper_face))
+
+        # Switch modes if applicable
+        # if mode == "down_to_top":
+            # queue.append((current_label, "top_to_down", level, current_z, current_mat, current_lower_face, current_upper_face))
+
+        # if mode == "top_to_down":
+            # queue.append((current_label, "same", level, current_z, current_mat, current_lower_face, current_upper_face))
+
+    return max_depth, segments
+
+
 def reflect_segment(lower_face, object_width):
     """
     Reflect the lower face of a segment across the object_width/2 axis.
@@ -782,7 +983,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
         height, width = current_image.shape[:2]
         camera_position = np.float32([width/3, height])
-        level = 0  # Start from level 0
+        level = 1  # Start from level 0
         levels_image = color_image_for_slic.copy()
         
         while np.any(levels > 0):# and level < 1:  # Continue until all segments are marked
@@ -928,7 +1129,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     )
     
 
-            ground_level = 0
+            ground_level = 1
             segments_in_level = np.unique(labels[(levels == ground_level)])
     
             max_depth = ground_level
@@ -1031,14 +1232,14 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
 
 # Example usage
-reference_image_path = "/home/dzhura/ComputerVision/data/img/reference.JPG"  # Replace with your reference image path
+reference_image_path = "/home/dmytrozhuravlov/cv/data/img/reference.JPG"  # Replace with your reference image path
 # folder_path = "/home/dmytrozhuravlov/cv/data/img/out/"  # Replace with your folder path
 # output_path = "/home/dmytrozhuravlov/cv/data/img/out/out"  # Replace with your output folder path
 
 # reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
-folder_path = "/home/dzhura/ComputerVision/data/img/test/"  # Replace with your folder path
-output_path = "/home/dzhura/ComputerVision/data/img/test/out"  # Replace with your output folder path
+folder_path = "/home/dmytrozhuravlov/cv/data/img/test/"  # Replace with your folder path
+output_path = "/home/dmytrozhuravlov/cv/data/img/test/out/"  # Replace with your output folder path
 
 threshold_value = 25  # Adjust threshold value as needed
 
-process_images(reference_image_path, folder_path, output_path, region_size=40, ruler=30, method="otsu")
+process_images(reference_image_path, folder_path, output_path, region_size=40*5, ruler=30*5, method="otsu")

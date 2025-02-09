@@ -2,7 +2,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-
+import trimesh
+from scipy.spatial import ConvexHull
 
 def generate_random_color():
     """Generates a random color and returns it in both BGR (for cv2) and RGB (for plt) formats."""
@@ -108,7 +109,7 @@ def draw_cubes_in_3d(lower_faces, heights, colors):
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
 
-        #ax.set_aspect('equal', adjustable='box')
+        ax.set_aspect('equal', adjustable='box')
         
         # Set the axis limits based on the data ranges
         #set_axes_limits(ax, lower_faces, heights)
@@ -127,7 +128,7 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
     """
     Display the bounding_box_image on the left and draw 3D bounding boxes on the right.
     """
-    plt.ion()  # Turn on interactive mode
+    #plt.ion()  # Turn on interactive mode
     fig = plt.figure(figsize=(12, 6))  # Create a wide figure for side-by-side display
 
     # Create subplots
@@ -135,7 +136,7 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
     ax_3d = fig.add_subplot(122, projection='3d')  # Right subplot for the 3D bounding boxes
     #ax_3d.view_init(elev=90, azim=-90)  # Align axes like in a mathematical system
 
-    while True:
+    if True: #while True:
         # Left: Display the bounding_box_image
         ax_img.cla()  # Clear the image plot
         ax_img.imshow(cv2.cvtColor(bounding_box_image, cv2.COLOR_BGR2RGB))
@@ -153,13 +154,127 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
         ax_3d.set_title("3D Bounding Boxes")
         #set_equal_axes(ax_3d)  # Ensure equal scaling for the 3D plot
 
-        plt.draw()
-        plt.pause(0.001)  # Small delay for interactive updates
+        # plt.draw()
+        # plt.pause(0.001)  # Small delay for interactive updates
 
-        # Break the loop if a key is pressed
-        # print("Press any key to render new boxes...")
-        # if plt.waitforbuttonpress():
-            # break
+        # # Break the loop if a key is pressed
+        # # print("Press any key to render new boxes...")
+        # # if plt.waitforbuttonpress():
+            # # break
 
-    plt.ioff()  # Turn off interactive mode
-    plt.close(fig)  # Close the figure when done
+    # plt.ioff()  # Turn off interactive mode
+    # plt.close(fig)  # Close the figure when done
+    plt.show()
+
+
+def draw_3d_points_with_hull(ext_3d):
+    # Validate and filter points
+    points = np.array([p for p in ext_3d if isinstance(p, (list, tuple, np.ndarray)) and len(p) == 3], dtype=np.float64)
+
+    if len(points) < 4:  # Convex Hull needs at least 4 non-coplanar points
+        raise ValueError(f"Insufficient valid 3D points. Found {len(points)} valid points.")
+    else:
+        print(f"3D points number: {len(points)}")
+
+    # Compute Convex Hull
+    hull = ConvexHull(points)
+
+    # Plot 3D Points
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    ax.scatter(points[:, 0], points[:, 1], points[:, 2], color="blue", marker="o")
+
+
+    # Draw Convex Hull
+    for simplex in hull.simplices:
+        ax.plot(points[simplex, 0], points[simplex, 1], points[simplex, 2], "r-")
+
+    # Fill Convex Hull Faces
+    ax.add_collection3d(Poly3DCollection(points[hull.simplices], alpha=0.2, edgecolor="r"))
+
+    ax.set_aspect('equal', adjustable='box')
+    plt.show()
+
+
+
+# def draw_3d_bounding_box(ax, lower_face, height, color='blue'):
+    # """
+    # Draw a 3D bounding box on the given Matplotlib 3D axis.
+    # """
+    # # Define the 8 vertices of the cube
+    # x, y, z = np.array(lower_face).T
+    # h = height
+    # upper_face = np.array(lower_face) + [0, 0, h]
+
+    # # Combine bottom and top faces
+    # vertices = np.vstack([lower_face, upper_face])
+
+    # # Define faces
+    # faces = [
+        # [vertices[i] for i in [0, 1, 3, 2]],  # Bottom face
+        # [vertices[i] for i in [4, 5, 7, 6]],  # Top face
+        # [vertices[i] for i in [0, 1, 5, 4]],  # Side face
+        # [vertices[i] for i in [2, 3, 7, 6]],  # Side face
+        # [vertices[i] for i in [0, 2, 6, 4]],  # Side face
+        # [vertices[i] for i in [1, 3, 7, 5]],  # Side face
+    # ]
+
+    # # Draw the cube
+    # poly3d = Poly3DCollection(faces, alpha=0.3, edgecolor="k")
+    # poly3d.set_facecolor(color)
+    # ax.add_collection3d(poly3d)
+
+# def compute_convex_hull_boxes(lower_faces, heights):
+    # """
+    # Compute additional boxes needed to connect all given bounding boxes into a convex shape.
+    # """
+    # all_points = np.vstack([np.array(lower_faces), np.array(lower_faces) + [0, 0, heights]])
+    
+    # hull = ConvexHull(all_points)
+    # additional_boxes = []
+
+    # for simplex in hull.simplices:
+        # # Compute the centroid of each hull face and generate a connecting box
+        # centroid = np.mean(all_points[simplex], axis=0)
+        # new_lower_face = centroid[:2]
+        # new_height = centroid[2]
+        
+        # # Ensure it doesn't already exist
+        # if not any(np.allclose(new_lower_face, existing[:2]) for existing in lower_faces):
+            # additional_boxes.append((new_lower_face, new_height))
+    
+    # return additional_boxes
+
+# def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors):
+    # """
+    # Display the bounding_box_image on the left and draw 3D bounding boxes on the right,
+    # ensuring convex connectivity by adding extra boxes.
+    # """
+    # fig = plt.figure(figsize=(12, 6))  
+
+    # # Create subplots
+    # ax_img = fig.add_subplot(121)  
+    # ax_3d = fig.add_subplot(122, projection='3d')  
+
+    # # Left: Display the bounding_box_image
+    # ax_img.imshow(cv2.cvtColor(bounding_box_image, cv2.COLOR_BGR2RGB))
+    # ax_img.axis('off')  
+    # ax_img.set_title("Bounding Box Image")
+
+    # # Compute additional bounding boxes for convex connection
+    # additional_boxes = compute_convex_hull_boxes(lower_faces, heights)
+
+    # # Right: Display the 3D bounding boxes
+    # for lower_face, height, color in zip(lower_faces, heights, colors):
+        # draw_3d_bounding_box(ax_3d, lower_face, height, color=color)
+
+    # # Draw the additional convex hull boxes
+    # for lower_face, height in additional_boxes:
+        # draw_3d_bounding_box(ax_3d, [lower_face], height, color='gray')
+
+    # ax_3d.set_xlabel('X')
+    # ax_3d.set_ylabel('Y')
+    # ax_3d.set_zlabel('Z')
+    # ax_3d.set_title("Convex 3D Bounding Boxes")
+
+    # plt.show()

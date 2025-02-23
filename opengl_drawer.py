@@ -2,8 +2,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-import trimesh
-from scipy.spatial import ConvexHull
+#import trimesh
+#from scipy.spatial import ConvexHull
 
 def generate_random_color():
     """Generates a random color and returns it in both BGR (for cv2) and RGB (for plt) formats."""
@@ -93,36 +93,81 @@ def set_axes_limits(ax, lower_faces, heights):
     ax.set_zlim(min_z, max_z)
 
 # Main function to draw multiple cubes
-def draw_cubes_in_3d(lower_faces, heights, colors):
+# def draw_cubes_in_3d(lower_faces, heights, colors):
+    # plt.ion()
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+
+    # while True:
+        # assert len(lower_faces) == len(heights), "Mismatched number of lower faces and heights"
+        # ax.cla()  # Clear axes for fresh rendering
+
+        # for lower_face, height, color in zip(lower_faces, heights, colors):
+            # draw_3d_bounding_box(ax, lower_face, height, color=color)
+
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+
+        # ax.set_aspect('equal', adjustable='box')
+        
+        # # Set the axis limits based on the data ranges
+        # #set_axes_limits(ax, lower_faces, heights)
+
+        # plt.draw()
+        # plt.pause(0.001)
+        
+        # print("Press any key to render new boxes...")
+        # if plt.waitforbuttonpress():
+            # break  # Exit loop if a key is pressed
+    
+    # plt.ioff()
+    #plt.close(fig)
+    
+def draw_cubes_in_3d(lower_faces, heights, colors, closest_points_3d=None):
+    """
+    Draws multiple cubes in 3D and optionally plots closest points.
+    
+    Args:
+        lower_faces (list): List of lower face coordinates for each cube.
+        heights (list): List of heights for each cube.
+        colors (list): List of colors for each cube.
+        closest_points_3d (list, optional): List of closest 3D points to plot.
+    """
     plt.ion()
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    ax = fig.add_subplot(111, projection="3d")
 
     while True:
         assert len(lower_faces) == len(heights), "Mismatched number of lower faces and heights"
         ax.cla()  # Clear axes for fresh rendering
 
+        # Draw 3D bounding boxes
         for lower_face, height, color in zip(lower_faces, heights, colors):
             draw_3d_bounding_box(ax, lower_face, height, color=color)
 
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+        # Draw closest 3D points (if provided)
+        if closest_points_3d:
+            closest_points_3d = np.array(closest_points_3d)
+            ax.scatter(closest_points_3d[:, 0], closest_points_3d[:, 1], closest_points_3d[:, 2],
+                       color="red", s=50, label="Closest Points")
 
-        ax.set_aspect('equal', adjustable='box')
-        
-        # Set the axis limits based on the data ranges
-        #set_axes_limits(ax, lower_faces, heights)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        ax.set_aspect("auto")
+        ax.legend()
 
         plt.draw()
         plt.pause(0.001)
-        
+
         print("Press any key to render new boxes...")
         if plt.waitforbuttonpress():
             break  # Exit loop if a key is pressed
-    
+
     plt.ioff()
-    plt.close(fig)
+    #plt.close(fig)
     
 def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors):
     """

@@ -5,7 +5,7 @@ from opengl_drawer import *
 #from shapely.geometry import Polygon
 from shapely.geometry import LineString, Point, Polygon
 from scipy.spatial import ConvexHull
-import flowiz as fz
+#import flowiz as fz
 
 from lifting import *
 from enum import Enum
@@ -1070,7 +1070,7 @@ def resize_to_height(image, target_height):
     return resized_image
 
 
-def segment_mask_with_colors(mask, extreme_points):
+def segment_mask_with_colors_origin(mask, extreme_points):
     """
     Segments the mask into 5 color-coded regions based on the extreme points.
     
@@ -1113,6 +1113,283 @@ def segment_mask_with_colors(mask, extreme_points):
     colored_mask[mask == 0] = [0, 0, 0]  # Keep background black
 
     return colored_mask
+
+def compute_distance(x1, y1, x2, y2, metric="chebyshev"):
+    """
+    Computes the distance between two points using different distance metrics.
+    
+    Args:
+        x1, y1 (int): Coordinates of first point.
+        x2, y2 (int): Coordinates of second point.
+        metric (str): Distance metric ('euclidean', 'manhattan', 'chebyshev').
+        
+    Returns:
+        float: Computed distance.
+    """
+    if metric == "euclidean":
+        return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    elif metric == "manhattan":
+        return np.abs(x2 - x1) + np.abs(y2 - y1)
+    elif metric == "chebyshev":
+        return max(np.abs(x2 - x1), np.abs(y2 - y1))
+    else:
+        raise ValueError("Unsupported distance metric. Choose 'euclidean', 'manhattan', or 'chebyshev'.")
+
+def segment_mask_with_colors(mask, extreme_points, metric="euclidean"):
+    """
+    Segments the mask into color-coded regions based on extreme points and a chosen distance metric.
+    
+    Args:
+        mask (numpy.ndarray): Binary mask (0 for background, 255 for foreground).
+        extreme_points (list): List of (x, y) extreme points 
+                               [left, down-left, down-right, right, up].
+        metric (str): Distance metric ('euclidean', 'manhattan', 'chebyshev').
+    
+    Returns:
+        numpy.ndarray: Segmented mask with different colors for each region.
+    """
+    h, w = mask.shape[:2]
+    
+    # Ensure mask is uint8 for OpenCV operations
+    mask = (mask * 255).astype(np.uint8) if mask.dtype == bool else mask
+
+    # Convert extreme points to numpy array
+    extreme_points = np.array(extreme_points, dtype=np.int32)
+
+    # Create an empty color image
+    colored_mask = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Generate distinct colors for each region
+    colors = np.random.randint(0, 255, (len(extreme_points), 3), dtype=np.uint8)
+
+    # Compute distance map based on the chosen metric
+    y_indices, x_indices = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+    distances = np.zeros((h, w, len(extreme_points)), dtype=np.float32)
+
+    for i, (x, y) in enumerate(extreme_points):
+        distances[:, :, i] = np.vectorize(compute_distance)(x_indices, y_indices, x, y, metric=metric)
+
+    # Get the index of the closest extreme point for each pixel
+    closest_region = np.argmin(distances, axis=2)
+
+    # Assign colors based on the closest extreme point
+    for i in range(len(extreme_points)):
+        colored_mask[closest_region == i] = colors[i]
+
+    # Ensure segmentation follows the mask shape
+    colored_mask[mask == 0] = [0, 0, 0]  # Keep background black
+
+    return colored_mask
+
+
+def segment_mask_with_colors_5(mask, extrem, metric="euclidean"):
+    """
+    Segments the mask into color-coded regions based on convex hull defects and center.
+
+    Args:
+        mask (numpy.ndarray): Binary mask (0 for background, 255 for foreground).
+        metric (str): Distance metric ('euclidean', 'manhattan', 'chebyshev').
+
+    Returns:
+        numpy.ndarray: Segmented mask with different colors for each region.
+    """
+    h, w = mask.shape[:2]
+
+    # Ensure mask is uint8 for OpenCV operations
+    mask = (mask * 255).astype(np.uint8) if mask.dtype == bool else mask
+
+    # Find contours and convex hull
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return np.zeros((h, w, 3), dtype=np.uint8)  # Return empty mask if no contour
+
+    contour = max(contours, key=cv2.contourArea)  # Use the largest contour
+    hull = cv2.convexHull(contour, returnPoints=False)
+    defects = cv2.convexityDefects(contour, hull)
+
+    if defects is None or len(defects) < 2:
+        return np.zeros((h, w, 3), dtype=np.uint8)  # Return empty mask if no defects
+
+    # Compute center of mass of the mask
+    M = cv2.moments(contour)
+    center_x = int(M["m10"] / M["m00"])
+    center_y = int(M["m01"] / M["m00"])
+    center = (center_x, center_y)
+
+    # Get defect points
+    defect_points = []
+    for i in range(defects.shape[0]):
+        _, _, f, _ = defects[i, 0]
+        defect_points.append(tuple(contour[f][0]))
+
+    defect_points = sorted(defect_points, key=lambda p: np.arctan2(p[1] - center_y, p[0] - center_x))
+
+    # Create an empty color image
+    colored_mask = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Generate distinct colors for each segment
+    colors = np.random.randint(0, 255, (len(defect_points), 3), dtype=np.uint8)
+
+    # Compute distance map
+    y_indices, x_indices = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+    distances = np.zeros((h, w, len(defect_points)), dtype=np.float32)
+
+    for i, (x, y) in enumerate(defect_points):
+        distances[:, :, i] = np.vectorize(compute_distance)(x_indices, y_indices, x, y, metric=metric)
+
+    # Find the closest defect pair
+    for i in range(len(defect_points) - 1):
+        d1, d2 = defect_points[i], defect_points[i + 1]
+        
+        # Compute distance to center
+        dist_center = np.vectorize(compute_distance)(x_indices, y_indices, center_x, center_y, metric=metric)
+        
+        # Compute distance to both defects
+        dist1 = np.vectorize(compute_distance)(x_indices, y_indices, d1[0], d1[1], metric=metric)
+        dist2 = np.vectorize(compute_distance)(x_indices, y_indices, d2[0], d2[1], metric=metric)
+        
+        # Define region by comparing distances
+        region_mask = (dist1 < dist2) & (dist1 < dist_center)
+        colored_mask[region_mask] = colors[i]
+
+    # Ensure segmentation follows the mask shape
+    colored_mask[mask == 0] = [0, 0, 0]  # Keep background black
+
+    return colored_mask
+
+def segment_mask_with_defects3(mask, extreme_points):
+    """
+    Segments the mask into regions based on the closest convex hull defect points.
+
+    Args:
+        mask (numpy.ndarray): Binary mask (0 for background, 255 for foreground).
+        extreme_points (list): List of 5 (x, y) extreme points 
+                               [left, down-left, down-right, right, up].
+    
+    Returns:
+        numpy.ndarray: Segmented mask with different colors for each region.
+    """
+    h, w = mask.shape[:2]
+    
+    # Convert extreme points to numpy array
+    extreme_points = np.array(extreme_points, dtype=np.int32)
+
+    # Create an empty color image
+    colored_mask = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Generate distinct colors for each region
+    colors = np.random.randint(0, 255, (len(extreme_points), 3), dtype=np.uint8)
+
+    # Find contours
+    contours, _ = cv2.findContours(mask.copy().astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours:
+        return colored_mask  # Return empty mask if no contours found
+
+    # Process the largest contour (assuming it's the main object)
+    contour = max(contours, key=cv2.contourArea)
+
+    # Compute convex hull and convexity defects
+    hull = cv2.convexHull(contour, returnPoints=False)
+    defects = cv2.convexityDefects(contour, hull)
+
+    if defects is None:
+        return colored_mask  # No convexity defects, return empty mask
+
+    defect_points = []
+    for i in range(defects.shape[0]):
+        _, _, f, d = defects[i, 0]
+        if d > 1000:  # Threshold to filter out small defects
+            defect_points.append(tuple(contour[f][0]))
+
+    defect_points = np.array(defect_points, dtype=np.int32)
+
+    # Create a distance map to the nearest extreme or defect point
+    y_indices, x_indices = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+    all_points = np.vstack((extreme_points, defect_points))  # Combine extreme & defect points
+
+    distances = np.zeros((h, w, len(all_points)), dtype=np.float32)
+    for i, (x, y) in enumerate(all_points):
+        distances[:, :, i] = np.sqrt((x_indices - x) ** 2 + (y_indices - y) ** 2)
+
+    # Assign each pixel to the nearest extreme/defect point
+    closest_region = np.argmin(distances, axis=2)
+
+    # Assign colors based on the closest region
+    for i in range(len(all_points)):
+        colored_mask[closest_region == i] = colors[i % len(extreme_points)]  # Cycle colors
+
+    # Ensure segmentation follows the mask shape
+    colored_mask[mask == 0] = [0, 0, 0]  # Keep background black
+
+    return colored_mask
+
+
+
+def segment_mask_with_defects(mask, extreme_points):
+    """
+    Segments the mask into regions using the closest convexity defect points.
+
+    Args:
+        mask (numpy.ndarray): Binary mask (0 for background, 255 for foreground).
+        extreme_points (list): List of 5 (x, y) extreme points 
+                               [left, down-left, down-right, right, up].
+
+    Returns:
+        numpy.ndarray: Segmented mask with different colors for each region.
+    """
+    h, w = mask.shape[:2]
+
+    # Convert extreme points to numpy array
+    extreme_points = np.array(extreme_points, dtype=np.int32)
+
+    # Create an empty color image
+    colored_mask = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Generate distinct colors
+    colors = np.random.randint(0, 255, (len(extreme_points), 3), dtype=np.uint8)
+
+    # Find contour from mask
+    mask = (mask * 255).astype(np.uint8)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return colored_mask  # Return empty mask if no contours found
+
+    # Get convex hull and convexity defects
+    hull = cv2.convexHull(contours[0], returnPoints=False)
+    defects = cv2.convexityDefects(contours[0], hull)
+
+    # Extract defect points between extreme points
+    defect_points = []
+    if defects is not None:
+        for i in range(defects.shape[0]):
+            _, _, farthest, _ = defects[i, 0]
+            defect_points.append(tuple(contours[0][farthest][0]))
+
+    # Convert defect points to numpy array
+    defect_points = np.array(defect_points, dtype=np.int32)
+
+    # Create a distance map where each pixel is assigned to the nearest defect point
+    y_indices, x_indices = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+
+    # Find the closest defect point for each pixel
+    distances = np.zeros((h, w, len(defect_points)), dtype=np.float32)
+    for i, (x, y) in enumerate(defect_points):
+        distances[:, :, i] = np.sqrt((x_indices - x) ** 2 + (y_indices - y) ** 2)
+
+    # Get the index of the closest defect point for each pixel
+    closest_region = np.argmin(distances, axis=2)
+
+    # Assign colors based on the closest defect point
+    for i in range(len(defect_points)):
+        colored_mask[closest_region == i] = colors[i % len(colors)]
+
+    # Ensure segmentation follows the mask shape
+    colored_mask[mask == 0] = [0, 0, 0]  # Keep background black
+
+    return colored_mask
+
+
     
 def segment_mask(mask, extreme_points):
     """
@@ -1141,6 +1418,68 @@ def segment_mask(mask, extreme_points):
     labels[mask == 0] = -1  # Background pixels get a special label (-1)
 
     return labels
+
+def compute_distance_2d(p1, p2):
+    """Computes Euclidean distance between two 2D points."""
+    return np.linalg.norm(np.array(p1) - np.array(p2))
+
+def find_closest_3d_point(extrem, pr_boxes, bottoms, heights):
+    """
+    Finds the closest 2D projection and maps it to the related 3D point.
+
+    Args:
+        extrem (list): List of 2D extreme points [(x, y), ...].
+        pr_boxes (list): List of projected boxes [(lower_face, upper_face), ...].
+        bottoms (list): List of 3D bottom coordinates of the boxes.
+        heights (list): Corresponding heights of the 3D boxes.
+
+    Returns:
+        list: List of tuples [(2D_closest_point, 3D_closest_point), ...].
+    """
+    closest_points = []
+
+    for ext_point in extrem:
+        min_dist = float("inf")
+        closest_2d = None
+        closest_3d = None
+
+        for i, (lower_face, upper_face) in enumerate(pr_boxes):
+            bottom_3d = bottoms[i]
+            height = heights[i]
+            
+            # Check closest point in lower_face
+            for lf in lower_face:
+                dist = compute_distance_2d(ext_point, lf)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_2d = lf
+                    closest_3d = bottom_3d + np.array([0, 0, 0])  # Bottom face in 3D
+
+            # Check closest point in upper_face
+            for uf in upper_face:
+                dist = compute_distance_2d(ext_point, uf)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_2d = uf
+                    closest_3d = bottom_3d + np.array([0, 0, height])  # Upper face in 3D
+
+            # Check closest point on edges connecting lower and upper faces
+            for lf, uf in zip(lower_face, upper_face):
+                # Parametric line equation: P(t) = lf + t * (uf - lf)
+                t = np.dot(ext_point - lf, uf - lf) / np.dot(uf - lf, uf - lf)
+                t = np.clip(t, 0, 1)  # Clamp t between 0 and 1
+                projected_2d = lf + t * (uf - lf)
+                dist = compute_distance_2d(ext_point, projected_2d)
+
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_2d = projected_2d
+                    closest_3d = bottom_3d + np.array([0, 0, t * height])  # Interpolated 3D height
+
+        closest_points.append(closest_3d)
+
+    return closest_points
+
 
 def process_images(reference_image_path, folder_path, output_path, method="otsu", 
                    threshold_value=50, region_size=40, ruler=30, slic_iterations=10):
@@ -1303,12 +1642,13 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
         # Initialize dictionaries and lists
         segments = {}
-        lower_faces = []
+        bottoms = []
+        pr_boxes = []
         heights = []
         colors = []
 
         box_image = color_image.copy()
-        mask = (levels > 0)
+        mask = (labels > 0)
         object_length = 21
         object_width = 7
         object_height = 7
@@ -1323,25 +1663,9 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         right_u = extrem[4]
 
         extrem = [down, top, left_v, right_v, left, right_u]
-        # Get segmented color mask
-        segmented_color_mask = segment_mask_with_colors(mask, extrem)
+
         
-        # Display results
-        plt.figure(figsize=(6, 6))
-        plt.imshow(segmented_color_mask)
-        plt.title("Segmented Mask with Color Regions")
-        plt.axis("off")
-        plt.show()
-        
-        ext_labels = segment_mask(mask, extrem)
-        # segment_label = 2  # Example: Extract the region corresponding to extreme point 2
-        # label_mask = (ext_labels == segment_label).astype(np.uint8) * 255  # Convert to binary mask
-        
-        # # Display extracted segment
-        # plt.imshow(label_mask, cmap="gray")
-        # plt.title(f"Segment {segment_label}")
-        # plt.axis("off")
-        # plt.show()
+        ext_labels = labels #segment_mask(mask, extrem)
 
         # Validate computed faces
         if lower_face is not None and upper_face is not None:
@@ -1408,13 +1732,14 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 [x, y, 0] for x, y in [(object_length, 0), (object_length, object_width), (0, object_width), (0, 0)]
             ]
     
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(object_height)
             cv2_color = list(cv_colors)[len(cv_colors) - 1].value
             plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
             colors.append(plt_color)
 
-            reflect = True
+            reflect = False #True
 
             # down = extrem[0]
             # top = extrem[1]
@@ -1426,16 +1751,14 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             
             marked_image = box_image.copy()
 
-            # Find the segment for top point
-            # segment_label = find_segment_for_point(labels, contour_mask, top)
-            # segment_mask = (labels == segment_index).astype(np.uint8) * 255  
-            # print(f"Segment label: {segment_label}")
-            # # Mark the segment in red
-            #marked_image = mark_segment(box_image, labels, segment_label, color=cv_colors.RED.value)
+
             segment_index = 1
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255 
+
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
@@ -1449,7 +1772,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
             avg_bottom_3d = [[max(0, min(x, object_length)), max(0, min(y, object_width)), z] for x, y in pr_upper_face]
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.RED.value
@@ -1459,7 +1783,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1478,17 +1802,12 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 )
 
 
-            # Find the segment for bottom point
-            # segment_label = find_segment_for_point(labels, contour_mask, down)
-            # print(f"Segment label: {segment_label}")
-            # # Mark the segment in red
-            # marked_image = mark_segment(marked_image, labels, segment_label, color=cv_colors.BLUE.value)
-
-            # mask = (labels == segment_label)
             segment_index = 0
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255  
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255  
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
@@ -1502,7 +1821,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             down_3d = [down_2d[0], down_2d[1], z]
             ext_3d.append(down_3d)
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.BLUE.value
@@ -1512,7 +1832,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1530,16 +1850,12 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     thickness=4
                 )
 
-            # Find the segment for left point
-            # segment_label = find_segment_for_point(labels, contour_mask, left)
-            # print(f"Segment label: {segment_label}")
-            # # Mark the segment in red
-            # marked_image = mark_segment(marked_image, labels, segment_label, color=cv_colors.SILVER.value)
-            # mask = (labels == segment_label)
             segment_index = 4
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255 
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
@@ -1554,7 +1870,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             ext_3d.append(left_3d)
             
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.ORANGE.value
@@ -1564,7 +1881,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1582,16 +1899,12 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     thickness=4
                 )
 
-            # Find the segment for left vertical point
-            # segment_label = find_segment_for_point(labels, contour_mask, left_v)
-            # print(f"Segment label: {segment_label}")
-            # # Mark the segment in red
-            # marked_image = mark_segment(marked_image, labels, segment_label, color=cv_colors.BROWN.value)
-            # mask = (labels == segment_label)
             segment_index = 2
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255 
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
             
@@ -1613,7 +1926,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             left_3d = [left_2d[0], left_2d[1], z + height/2]
             ext_3d.append(left_3d)
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.BROWN.value
@@ -1623,7 +1937,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1648,9 +1962,11 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             # marked_image = mark_segment(marked_image, labels, segment_label, color=cv_colors.TEAL.value)
             # mask = (labels == segment_label)
             segment_index = 3
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255 
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
             
@@ -1672,7 +1988,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             right_3d = [right_2d[0], right_2d[1], z + height/2]
             ext_3d.append(right_3d)
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.TEAL.value
@@ -1682,7 +1999,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1701,9 +2018,11 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 )
 
             segment_index = 5 # right_up
-            mask = (ext_labels == segment_index)  # Get all pixels belonging to the segment
+            segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
+            mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
             marked_image[mask] = list(cv_colors)[segment_index].value
-            mask = (ext_labels == segment_index).astype(np.uint8) * 255 
+            ext_labels[ext_labels == segment_label] = 0
+            #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
             lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
             
@@ -1725,7 +2044,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             right_3d = [right_2d[0], right_2d[1], z + height/2]
             ext_3d.append(right_3d)
             
-            lower_faces.append(np.array(avg_bottom_3d))
+            bottoms.append(np.array(avg_bottom_3d))
+            pr_boxes.append((lower_face, upper_face))
             heights.append(height)
 
             cv2_color = cv_colors.TEAL.value
@@ -1735,7 +2055,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             if reflect:
                 # Reflect the lower face and add the reflected data
                 reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                lower_faces.append(reflected_bottom)
+                bottoms.append(reflected_bottom)
                 heights.append(height)  # Symmetric object, height remains the same
                 colors.append(plt_color)  # Use the same color for symmetry
                 
@@ -1752,6 +2072,92 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     color=cv_colors.TEAL.value,
                     thickness=4
                 )
+
+        # second iteration
+        mask = (labels > 0)
+        object_length = 21 - 3
+        object_width = 7 - 2
+        object_height = 7 - 2
+        
+        lower_face, upper_face, extrem = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+
+        down = extrem[0]
+        top = extrem[1]
+        left = extrem[5]
+        left_v = extrem[2]
+        right_v = extrem[3]
+        right_u = extrem[4]
+
+        extrem = [down, top, left_v, right_v, left, right_u]
+
+        
+        ext_labels = labels #segment_mask(mask, extrem)
+
+        # Validate computed faces
+        if lower_face is not None and upper_face is not None:
+            # top down
+            pts1 = np.float32(lower_face)
+            pts2 = np.float32([(0, 0), (object_length, 0), (object_length, object_width), (0, object_width)])
+            pts3 = np.float32(upper_face)
+
+            # Generate the perspective transformation matrices
+            ipm_matrix = cv2.getPerspectiveTransform(pts1, pts2)
+            inv_ipm_matrix = cv2.getPerspectiveTransform(pts2, pts1)
+            top_inv_ipm_matrix = cv2.getPerspectiveTransform(pts1, pts3)
+            top_ipm_matrix = cv2.getPerspectiveTransform(pts3, pts2)
+            
+            # left face
+            pts1 = np.float32([lower_face[0], upper_face[0], upper_face[3], lower_face[3]])
+            pts2 = np.float32([(0, 0), (0, object_height), (object_width, object_height), (object_width, 0)])
+            pts3 = np.float32([lower_face[1], upper_face[1], upper_face[2], lower_face[2]])
+
+            ipm_left = cv2.getPerspectiveTransform(pts1, pts2)
+            inv_ipm_left = cv2.getPerspectiveTransform(pts2, pts1)
+            top_inv_ipm_left = cv2.getPerspectiveTransform(pts1, pts3)
+            top_ipm_left = cv2.getPerspectiveTransform(pts3, pts2)
+
+
+            print("Drawing Cube")
+            # Draw 3D cube
+            draw_cube(
+                marked_image,
+                lower_face.astype("int"),
+                upper_face.astype("int"),
+                color=list(cv_colors)[len(cv_colors) - 1].value,
+                thickness=14
+            )
+            # Draw circles on the lower face points
+            for i, point in enumerate(lower_face):
+                # Define the color for the circle
+                color=list(cv_colors)[i % len(cv_colors)].value
+        
+                # Draw the circle
+                cv2.circle(
+                    marked_image,
+                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    radius=15,  # Circle radius
+                    color=color,
+                    thickness=-1  # Filled circle
+                )
+                
+            # Draw circles on the lower face points
+            for i, point in enumerate(extrem):
+                # Define the color for the circle
+                color=list(cv_colors)[i + 10 % len(cv_colors)].value
+        
+                # Draw the circle
+                cv2.circle(
+                    marked_image,
+                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    radius=15,  # Circle radius
+                    color=color,
+                    thickness=-1  # Filled circle
+                )
+
+
+
+
+
 
 
             # Display the result
@@ -1779,10 +2185,11 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
         print(f"Processed {filename}: Results saved to {output_path}")
         
-        if len(lower_faces) > 0:# and frame_count == 80:
-            draw_cubes_in_3d(lower_faces, heights, colors)
+        if len(bottoms) > 0:# and frame_count == 80:
+            closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
+            draw_cubes_in_3d(bottoms, heights, colors, closest_points_3d)
             #draw_3d_points_with_hull(ext_3d)
-            #draw_cubes_with_bounding_image(box_image, lower_faces, heights, colors)
+            #draw_cubes_with_bounding_image(box_image, bottoms, heights, colors)
 
 
 # Example usage

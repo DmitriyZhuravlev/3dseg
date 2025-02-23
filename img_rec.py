@@ -200,6 +200,7 @@ def extract_segment_pixels(boundary_mask, pos_point, neg_point):
 def get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
     #mask = (labels == label)
     lower_face, upper_face = None, None
+    extrem = None
     ys, xs = np.where(mask)
     
     if xs.size > 0 and ys.size > 0:
@@ -223,13 +224,13 @@ def get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
         
         # Compute 3D box from plain mask
         try:
-            lower_face, upper_face = compute_3d_box_from_plain_mask_new(
+            lower_face, upper_face, extrem = compute_3d_box_from_plain_mask_new(
                 mask, vert_vp, hor_left_vp, hor_right_vp, debug)
         except Exception as e:
             print(f"Error processing segment with label")# {label}: {e}")
             return None, None
         
-    return lower_face, upper_face
+    return lower_face, upper_face, extrem
     
 def draw_cube(image,
               lower_face,
@@ -297,6 +298,7 @@ def compute_3d_box_from_plain_mask_new(mask, vert_vp, hor_left_vp, hor_right_vp,
     # TODO check orientation
     point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
 
+    extrem = [point_a, point_b, point_c, point_d, point_e, point_f]
     # Step 2: Compute intersections for corners
     def compute_intersection(line1, line2):
         """Compute the intersection of two lines in homogeneous coordinates."""
@@ -436,7 +438,7 @@ def compute_3d_box_from_plain_mask_new(mask, vert_vp, hor_left_vp, hor_right_vp,
     # print([corner_a, corner_b, corner_h, corner_c])
     # print([corner_a1, corner_b1, corner_h1, corner_c1])
 
-    return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1])
+    return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1]), np.array(extrem)
 
 
 def find_neighbors_within_mask(labels, e=10):
@@ -717,7 +719,7 @@ def process_segments_bfs_static(
 
             relative_positions = neighbors_dict[current_label][neighbor_label]
             mask = (labels == neighbor_label)
-            neighbor_lower_face, neighbor_upper_face = get_projected_box(
+            neighbor_lower_face, neighbor_upper_face, _ = get_projected_box(
                 mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
             )
 
@@ -787,7 +789,7 @@ def process_segments_bfs(
         max_depth = max(max_depth, level)
 
         # Skip if already processed
-        if current_label in segments and segments[current_label]['used']:
+        if 0 != level and current_label in segments and segments[current_label]['used']:
             continue
 
         # Initialize the current segment if not already done
@@ -831,7 +833,7 @@ def process_segments_bfs(
 
             relative_positions = neighbors_dict[current_label][neighbor_label]
             mask = (labels == neighbor_label)
-            neighbor_lower_face, neighbor_upper_face = get_projected_box(
+            neighbor_lower_face, neighbor_upper_face, _ = get_projected_box(
                 mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
             )
 
@@ -873,6 +875,120 @@ def process_segments_bfs(
 
         # if mode == "top_to_down":
             # queue.append((current_label, "same", level, current_z, current_mat, current_lower_face, current_upper_face))
+
+    return max_depth, segments
+
+
+def process_segments_bfs_min(
+    start_label,
+    lower_face,
+    upper_face,
+    labels,
+    z,
+    mat,
+    object_length,
+    object_width,
+    object_height,
+    inv_ipm_matrix,
+    top_inv_ipm_matrix,
+    neighbors_dict,
+    region_size
+):
+    # Queue for BFS: stores tuples (current_label, mode, level, z, mat)
+    queue = deque()
+    queue.append((start_label, "down_to_top", 0, z, mat, lower_face, upper_face))
+
+    segments = {}
+    max_depth = 0
+
+    while queue:
+        current_label, mode, level, current_z, current_mat, current_lower_face, current_upper_face = queue.popleft()
+        max_depth = max(max_depth, level)
+
+        # Skip if already processed
+        if current_label in segments and segments[current_label]['used']:
+            # Update z if a smaller value is found
+            segments[current_label]['z'] = min(segments[current_label]['z'], current_z)
+            continue
+
+        # Initialize the current segment if not already done
+        if current_label not in segments:
+            segment = {
+                'level': level,
+                'label': current_label,
+                'lower_face': current_lower_face,
+                'upper_face': current_upper_face,
+                'height': None,
+                'z': current_z,
+                'mat': current_mat,
+                'used': False,
+            }
+
+            if current_lower_face is None:
+                continue
+
+            # Map lower face (bottom) to BEV and validate
+            bottom_face = map_points_to_BEV(current_lower_face, current_mat)
+            if not validate_bottom_face_points(bottom_face, object_length, object_width):
+                continue  # Skip invalid bottom face
+
+            # Compute height and finalize segment data
+            height = calc_height(
+                current_lower_face, current_upper_face, bottom_face,
+                inv_ipm_matrix, top_inv_ipm_matrix, object_height
+            )
+            epsilon = object_height / 1000
+            if -epsilon > current_z + height or object_height + epsilon < current_z + height:
+                continue
+
+            segment.update({'bottom': bottom_face, 'height': height, 'used': True})
+            segments[current_label] = segment
+
+        # Collect and sort neighbors by overlap area
+        neighbors = []
+        for neighbor_label in neighbors_dict.get(current_label, []):
+            if neighbor_label in segments and segments[neighbor_label]['used']:
+                continue
+
+            relative_positions = neighbors_dict[current_label][neighbor_label]
+            mask = (labels == neighbor_label)
+            neighbor_lower_face, neighbor_upper_face, _ = get_projected_box(
+                mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
+            )
+
+            if ({'top', 'top-left', 'top-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(current_upper_face, neighbor_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "down_to_top", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+            elif  ({'bottom', 'bottom-left', 'bottom-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(neighbor_upper_face, current_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "top_to_down", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+            elif ({'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'} & set(relative_positions)):
+                overlap_area = faces_overlap_iou(current_lower_face, neighbor_lower_face, region_size)
+                if overlap_area > 0:
+                    neighbors.append((neighbor_label, "same", neighbor_lower_face, neighbor_upper_face, overlap_area))
+
+        # Sort neighbors by overlap area (descending)
+        neighbors.sort(key=lambda x: x[4], reverse=True)
+
+        # Add sorted neighbors to the queue
+        for neighbor_label, next_mode, neighbor_lower_face, neighbor_upper_face, _ in neighbors:
+            pts1 = np.float32(current_upper_face if next_mode == "down_to_top" else neighbor_upper_face)
+            pts2 = np.float32(current_lower_face if next_mode == "down_to_top" else neighbor_lower_face)
+            local_persp = cv2.getPerspectiveTransform(pts1, pts2)
+            neighbor_mat = np.dot(current_mat, local_persp)
+
+            height = calc_height(
+                neighbor_lower_face, neighbor_upper_face, map_points_to_BEV(neighbor_lower_face, current_mat),
+                inv_ipm_matrix, top_inv_ipm_matrix, object_height
+            )
+
+            # Ensure the z-coordinate is minimal
+            minimal_z = min(current_z, current_z + height)
+            queue.append((neighbor_label, next_mode, level + (1 if next_mode == "down_to_top" else -1), minimal_z, neighbor_mat, neighbor_lower_face, neighbor_upper_face))
 
     return max_depth, segments
 
@@ -940,6 +1056,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         for i in range(len(contours)):
             if hierarchy[0][i][3] != -1:  # If contour is a child (hole)
                 cv2.drawContours(object_mask, contours, i, 255, thickness=cv2.FILLED)
+
+        # Convert the binary mask to 3 channels to match the color image
+        object_mask_3c = cv2.cvtColor(object_mask, cv2.COLOR_GRAY2BGR)
+    
+        # Apply the mask to the color image
+        background_removed = cv2.bitwise_and(color_image, object_mask_3c)
+        
+        # Save or display the result
+        #output_path = os.path.join(output_path, f"removed_{filename}")
+        cv2.imwrite(os.path.join(output_path, f"removed_{filename}"), background_removed)
 
         # Convert grayscale image to color for SLIC
         color_image_for_slic = color_image.copy() #cv2.cvtColor(current_image, cv2.COLOR_GRAY2BGR)
@@ -1053,7 +1179,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         object_width = 7
         object_height = 7
         
-        lower_face, upper_face = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+        lower_face, upper_face, extrem = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
         # Validate computed faces
         if lower_face is not None and upper_face is not None:
@@ -1091,6 +1217,20 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     color=color,
                     thickness=-1  # Filled circle
                 )
+                
+                        # Draw circles on the lower face points
+            for i, point in enumerate(extrem):
+                # Define the color for the circle
+                color=list(cv_colors)[i + 10 % len(cv_colors)].value
+        
+                # Draw the circle
+                cv2.circle(
+                    box_image,
+                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    radius=15,  # Circle radius
+                    color=color,
+                    thickness=-1  # Filled circle
+                )
             
             
             neighbors_dict = find_neighbors_within_mask(labels)
@@ -1115,7 +1255,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             for label in np.unique(labels):
                 mask = (labels == label)
                 # Extract the lower and upper faces for the segment
-                lower_face, upper_face = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+                lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1133,38 +1273,130 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segments_in_level = np.unique(labels[(levels == ground_level)])
     
             max_depth = ground_level
-    
+            
+            # Queue for BFS: stores tuples (current_label, mode, level, z, mat)
+            queue = deque()
+            #queue.append((start_label, "down_to_top", 0, z, mat, lower_face, upper_face))
+        
+            segments = {}
+            max_depth = 0
+            
             # Process all segments using BFS
             for label in segments_in_level:
                 # Create a mask for the segment
                 mask = (labels == label)
             
                 # Extract the lower and upper faces for the segment
-                lower_face, upper_face = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+                lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+                queue.append((label, "down_to_top", ground_level, 0, ipm_matrix, lower_face, upper_face))
             
-                # Initialize the BFS process for the segment
-                depth, segment_data = process_segments_bfs(
-                    start_label=label,               # Label of the starting segment
-                    lower_face=lower_face,           # Lower face points of the segment
-                    upper_face=upper_face,           # Upper face points of the segment
-                    labels=labels,                   # Label matrix for all segments
-                    z=0,                             # Starting height
-                    mat=ipm_matrix,                  # Initial transformation matrix
-                    object_length=object_length,     # Object length
-                    object_width=object_width,       # Object width
-                    object_height=object_height,     # Object height
-                    inv_ipm_matrix=inv_ipm_matrix,   # Inverse Perspective Mapping matrix
-                    top_inv_ipm_matrix=top_inv_ipm_matrix,  # Top-view matrix for height calculation
-                    neighbors_dict=neighbors_dict,   # Neighbor relationships
-                    region_size=region_size          # Overlap sensitivity
-                )
-            
+                # # Initialize the BFS process for the segment
+                # depth, segment_data = process_segments_bfs(
+                    # start_label=label,               # Label of the starting segment
+                    # lower_face=lower_face,           # Lower face points of the segment
+                    # upper_face=upper_face,           # Upper face points of the segment
+                    # labels=labels,                   # Label matrix for all segments
+                    # z=0,                             # Starting height
+                    # mat=ipm_matrix,                  # Initial transformation matrix
+                    # object_length=object_length,     # Object length
+                    # object_width=object_width,       # Object width
+                    # object_height=object_height,     # Object height
+                    # inv_ipm_matrix=inv_ipm_matrix,   # Inverse Perspective Mapping matrix
+                    # top_inv_ipm_matrix=top_inv_ipm_matrix,  # Top-view matrix for height calculation
+                    # neighbors_dict=neighbors_dict,   # Neighbor relationships
+                    # region_size=region_size          # Overlap sensitivity
+                # )
+
+            while queue:
+                current_label, mode, level, current_z, current_mat, current_lower_face, current_upper_face = queue.popleft()
+                max_depth = max(max_depth, level)
+        
+                # Skip if already processed
+                if current_label in segments and segments[current_label]['used']:
+                    continue
+        
+                # Initialize the current segment if not already done
+                if current_label not in segments:
+                    segment = {
+                        'level': level,
+                        'label': current_label,
+                        'lower_face': current_lower_face,
+                        'upper_face': current_upper_face,
+                        'height': None,
+                        'z': current_z,
+                        'mat': current_mat,
+                        'used': False,
+                    }
+        
+                    if current_lower_face is None:
+                        continue
+        
+                    # Map lower face (bottom) to BEV and validate
+                    bottom_face = map_points_to_BEV(current_lower_face, current_mat)
+                    if not validate_bottom_face_points(bottom_face, object_length, object_width):
+                        continue  # Skip invalid bottom face
+        
+                    # Compute height and finalize segment data
+                    height = calc_height(
+                        current_lower_face, current_upper_face, bottom_face,
+                        inv_ipm_matrix, top_inv_ipm_matrix, object_height
+                    )
+                    epsilon = object_height / 1000
+                    if -epsilon > current_z + height or object_height + epsilon < current_z + height:
+                        continue
+
+                    segment.update({'bottom': bottom_face, 'height': height, 'used': True})
+                    segments[current_label] = segment
+        
+                # Collect and sort neighbors by overlap area
+                neighbors = []
+                for neighbor_label in neighbors_dict.get(current_label, []):
+                    if neighbor_label in segments and segments[neighbor_label]['used']:
+                        continue
+        
+                    relative_positions = neighbors_dict[current_label][neighbor_label]
+                    mask = (labels == neighbor_label)
+                    neighbor_lower_face, neighbor_upper_face, _ = get_projected_box(
+                        mask, vert_vp, hor_left_vp, hor_right_vp, debug=False
+                    )
+        
+                    if ({'top', 'top-left', 'top-right'} & set(relative_positions)):
+                        overlap_area = faces_overlap_iou(current_upper_face, neighbor_lower_face, region_size)
+                        if overlap_area > 0:
+                            neighbors.append((neighbor_label, "down_to_top", neighbor_lower_face, neighbor_upper_face, overlap_area))
+        
+                    elif  ({'bottom', 'bottom-left', 'bottom-right'} & set(relative_positions)):
+                        overlap_area = faces_overlap_iou(neighbor_upper_face, current_lower_face, region_size)
+                        if overlap_area > 0:
+                            neighbors.append((neighbor_label, "top_to_down", neighbor_lower_face, neighbor_upper_face, overlap_area))
+        
+                    elif ({'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'} & set(relative_positions)):
+                        overlap_area = faces_overlap_iou(current_lower_face, neighbor_lower_face, region_size)
+                        if overlap_area > 0:
+                            neighbors.append((neighbor_label, "same", neighbor_lower_face, neighbor_upper_face, overlap_area))
+        
+                # Sort neighbors by overlap area (descending)
+                neighbors.sort(key=lambda x: x[4], reverse=True)
+        
+                # Add sorted neighbors to the queue
+                for neighbor_label, next_mode, neighbor_lower_face, neighbor_upper_face, _ in neighbors:
+                    pts1 = np.float32(current_upper_face if next_mode == "down_to_top" else neighbor_upper_face)
+                    pts2 = np.float32(current_lower_face if next_mode == "down_to_top" else neighbor_lower_face)
+                    local_persp = cv2.getPerspectiveTransform(pts1, pts2)
+                    neighbor_mat = np.dot(current_mat, local_persp)
+        
+                    height = calc_height(
+                        neighbor_lower_face, neighbor_upper_face, map_points_to_BEV(neighbor_lower_face, current_mat),
+                        inv_ipm_matrix, top_inv_ipm_matrix, object_height
+                    )
+        
+                    queue.append((neighbor_label, next_mode, level + (1 if next_mode == "down_to_top" else -1), current_z + height, neighbor_mat, neighbor_lower_face, neighbor_upper_face))
                 # Update the maximum depth of the process
-                if max_depth < depth:
-                    max_depth = depth
+                # if max_depth < depth:
+                    # max_depth = depth
             
-                # Merge the processed segment data into the global `segments`
-                segments.update(segment_data)
+                # # Merge the processed segment data into the global `segments`
+                # segments.update(segment_data)
     
             print(f"Max depth: {max_depth}")
             heatmap_colors = interpolate_heatmap_colors(max_depth)
@@ -1232,14 +1464,19 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
 
 # Example usage
-reference_image_path = "/home/dmytrozhuravlov/cv/data/img/reference.JPG"  # Replace with your reference image path
-# folder_path = "/home/dmytrozhuravlov/cv/data/img/out/"  # Replace with your folder path
-# output_path = "/home/dmytrozhuravlov/cv/data/img/out/out"  # Replace with your output folder path
+# reference_image_path = "/home/dmytrozhuravlov/cv/data/img/reference.JPG"  # Replace with your reference image path
+# # folder_path = "/home/dmytrozhuravlov/cv/data/img/out/"  # Replace with your folder path
+# # output_path = "/home/dmytrozhuravlov/cv/data/img/out/out"  # Replace with your output folder path
 
-# reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
-folder_path = "/home/dmytrozhuravlov/cv/data/img/test/"  # Replace with your folder path
-output_path = "/home/dmytrozhuravlov/cv/data/img/test/out/"  # Replace with your output folder path
+# # reference_image_path = "/home/dmytrozhuravlov/cv/data/img/out/reference.JPG"  # Replace with your reference image path
+# folder_path = "/home/dmytrozhuravlov/cv/data/img/test/"  # Replace with your folder path
+# output_path = "/home/dmytrozhuravlov/cv/data/img/test/out/"  # Replace with your output folder path
+
+
+reference_image_path = "/home/dzhura/ComputerVision/data/img/reference.JPG"  # Replace with your reference image path
+folder_path = "/home/dzhura/ComputerVision/data/img/test/"  # Replace with your folder path
+output_path = "/home/dzhura/ComputerVision/data/img/test/out"  # Replace with your output folder path
 
 threshold_value = 25  # Adjust threshold value as needed
 
-process_images(reference_image_path, folder_path, output_path, region_size=40*5, ruler=30*5, method="otsu")
+process_images(reference_image_path, folder_path, output_path, region_size=40*3, ruler=30*3, method="otsu")

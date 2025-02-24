@@ -138,7 +138,7 @@ def draw_cubes_in_3d(lower_faces, heights, colors, closest_points_3d=None):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
 
-    while True:
+    while plt.fignum_exists(fig.number):  # Keeps running unless the window is closed
         assert len(lower_faces) == len(heights), "Mismatched number of lower faces and heights"
         ax.cla()  # Clear axes for fresh rendering
 
@@ -162,12 +162,10 @@ def draw_cubes_in_3d(lower_faces, heights, colors, closest_points_3d=None):
         plt.draw()
         plt.pause(0.001)
 
-        print("Press any key to render new boxes...")
-        if plt.waitforbuttonpress():
-            break  # Exit loop if a key is pressed
+        print("Press any key to update, close the window to exit...")
+        plt.waitforbuttonpress()  # Now it waits but doesn't break the loop
 
-    plt.ioff()
-    #plt.close(fig)
+    plt.ioff()  # Turn off interactive mode when the window is closed
     
 def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors):
     """

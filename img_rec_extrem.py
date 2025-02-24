@@ -1423,9 +1423,30 @@ def compute_distance_2d(p1, p2):
     """Computes Euclidean distance between two 2D points."""
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
+def project_point_on_line(p, a, b):
+    """
+    Projects point `p` onto the line segment `ab` and returns the closest point.
+
+    Args:
+        p (array-like): 2D point (x, y).
+        a (array-like): 2D endpoint of line segment (x, y).
+        b (array-like): 2D endpoint of line segment (x, y).
+
+    Returns:
+        projected_point (array): Closest 2D point on segment `ab`.
+        t (float): Ratio along the segment (0 = a, 1 = b).
+    """
+    a, b, p = np.array(a), np.array(b), np.array(p)
+    ab = b - a
+    ap = p - a
+    t = np.dot(ap, ab) / np.dot(ab, ab)
+    t = np.clip(t, 0, 1)  # Clamp t between 0 and 1
+    projected_point = a + t * ab
+    return projected_point, t
+
 def find_closest_3d_point(extrem, pr_boxes, bottoms, heights):
     """
-    Finds the closest 2D projection and maps it to the related 3D point.
+    Finds the closest 2D projection on cube edges and maps it to 3D space.
 
     Args:
         extrem (list): List of 2D extreme points [(x, y), ...].
@@ -1434,9 +1455,11 @@ def find_closest_3d_point(extrem, pr_boxes, bottoms, heights):
         heights (list): Corresponding heights of the 3D boxes.
 
     Returns:
-        list: List of tuples [(2D_closest_point, 3D_closest_point), ...].
+        list: List of closest 3D points.
     """
     closest_points = []
+    closest_points_pr = []
+    
 
     for ext_point in extrem:
         min_dist = float("inf")
@@ -1446,40 +1469,44 @@ def find_closest_3d_point(extrem, pr_boxes, bottoms, heights):
         for i, (lower_face, upper_face) in enumerate(pr_boxes):
             bottom_3d = bottoms[i]
             height = heights[i]
-            
-            # Check closest point in lower_face
-            for lf in lower_face:
-                dist = compute_distance_2d(ext_point, lf)
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_2d = lf
-                    closest_3d = bottom_3d + np.array([0, 0, 0])  # Bottom face in 3D
 
-            # Check closest point in upper_face
-            for uf in upper_face:
-                dist = compute_distance_2d(ext_point, uf)
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_2d = uf
-                    closest_3d = bottom_3d + np.array([0, 0, height])  # Upper face in 3D
-
-            # Check closest point on edges connecting lower and upper faces
-            for lf, uf in zip(lower_face, upper_face):
-                # Parametric line equation: P(t) = lf + t * (uf - lf)
-                t = np.dot(ext_point - lf, uf - lf) / np.dot(uf - lf, uf - lf)
-                t = np.clip(t, 0, 1)  # Clamp t between 0 and 1
-                projected_2d = lf + t * (uf - lf)
+            # Check closest point on bottom and top face edges
+            for j in range(len(lower_face)):
+                a, b = lower_face[j], lower_face[(j + 1) % len(lower_face)]  # Bottom edge
+                projected_2d, t = project_point_on_line(ext_point, a, b)
                 dist = compute_distance_2d(ext_point, projected_2d)
 
                 if dist < min_dist:
                     min_dist = dist
                     closest_2d = projected_2d
-                    closest_3d = bottom_3d + np.array([0, 0, t * height])  # Interpolated 3D height
+                    a_3d, b_3d = bottom_3d[j], bottom_3d[(j + 1) % len(lower_face)]
+                    closest_3d = a_3d * (1 - t) + b_3d * t  # Correct interpolation
+
+                a, b = upper_face[j], upper_face[(j + 1) % len(upper_face)]  # Top edge
+                projected_2d, t = project_point_on_line(ext_point, a, b)
+                dist = compute_distance_2d(ext_point, projected_2d)
+
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_2d = projected_2d
+                    a_3d, b_3d = bottom_3d[j] + np.array([0, 0, height]), bottom_3d[(j + 1) % len(lower_face)] + np.array([0, 0, height])
+                    closest_3d = a_3d * (1 - t) + b_3d * t  # Correct interpolation
+
+            # Check closest point on vertical edges
+            for j, (lf, uf) in enumerate(zip(lower_face, upper_face)): 
+                projected_2d, t = project_point_on_line(ext_point, lf, uf)
+                dist = compute_distance_2d(ext_point, projected_2d)
+
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_2d = projected_2d
+                    a_3d, b_3d = bottom_3d[j], bottom_3d[j] + np.array([0, 0, height])
+                    closest_3d = a_3d * (1 - t) + b_3d * t  # Correct interpolation
 
         closest_points.append(closest_3d)
+        closest_points_pr.append(closest_2d)
 
-    return closest_points
-
+    return closest_points, closest_points_pr
 
 def process_images(reference_image_path, folder_path, output_path, method="otsu", 
                    threshold_value=50, region_size=40, ruler=30, slic_iterations=10):
@@ -1698,21 +1725,21 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 lower_face.astype("int"),
                 upper_face.astype("int"),
                 color=list(cv_colors)[len(cv_colors) - 1].value,
-                thickness=14
+                thickness=4
             )
             # Draw circles on the lower face points
-            for i, point in enumerate(lower_face):
-                # Define the color for the circle
-                color=list(cv_colors)[i % len(cv_colors)].value
+            # for i, point in enumerate(lower_face):
+                # # Define the color for the circle
+                # color=list(cv_colors)[i % len(cv_colors)].value
         
-                # Draw the circle
-                cv2.circle(
-                    box_image,
-                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                    radius=15,  # Circle radius
-                    color=color,
-                    thickness=-1  # Filled circle
-                )
+                # # Draw the circle
+                # cv2.circle(
+                    # box_image,
+                    # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    # radius=15,  # Circle radius
+                    # color=color,
+                    # thickness=-1  # Filled circle
+                # )
                 
             # Draw circles on the lower face points
             for i, point in enumerate(extrem):
@@ -1738,6 +1765,25 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             cv2_color = list(cv_colors)[len(cv_colors) - 1].value
             plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
             colors.append(plt_color)
+            
+            closest_points_3d, closest_points_2d = find_closest_3d_point([extrem[0]], pr_boxes, bottoms, heights)
+            
+            # Draw circles on the lower face points
+            for i, point in enumerate(closest_points_2d):
+                # Define the color for the circle
+                color=list(cv_colors)[i + 10 % len(cv_colors)].value
+        
+                # Draw the circle
+                cv2.circle(
+                    box_image,
+                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    radius=25,  # Circle radius
+                    color=cv_colors.ORANGE.value,
+                    thickness=-1  # Filled circle
+                )
+            
+            for i, pt in enumerate(closest_points_3d):
+                 print(f"Point {i}: {pt}, Type: {type(pt)}, Shape: {np.shape(pt) if isinstance(pt, np.ndarray) else 'N/A'}")
 
             reflect = False #True
 
@@ -1755,7 +1801,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 1
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
 
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
@@ -1805,7 +1851,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 0
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255  
             # Extract the lower and upper faces for the segment
@@ -1853,7 +1899,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 4
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
@@ -1902,7 +1948,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 2
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
@@ -1964,7 +2010,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 3
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
@@ -2020,7 +2066,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             segment_index = 5 # right_up
             segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
             mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-            marked_image[mask] = list(cv_colors)[segment_index].value
+            #marked_image[mask] = list(cv_colors)[segment_index].value
             ext_labels[ext_labels == segment_label] = 0
             #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
             # Extract the lower and upper faces for the segment
@@ -2124,7 +2170,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 lower_face.astype("int"),
                 upper_face.astype("int"),
                 color=list(cv_colors)[len(cv_colors) - 1].value,
-                thickness=14
+                thickness=3
             )
             # Draw circles on the lower face points
             for i, point in enumerate(lower_face):
@@ -2146,13 +2192,13 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 color=list(cv_colors)[i + 10 % len(cv_colors)].value
         
                 # Draw the circle
-                cv2.circle(
-                    marked_image,
-                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                    radius=15,  # Circle radius
-                    color=color,
-                    thickness=-1  # Filled circle
-                )
+                # cv2.circle(
+                    # marked_image,
+                    # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    # radius=15,  # Circle radius
+                    # color=color,
+                    # thickness=-1  # Filled circle
+                # )
 
 
 
@@ -2186,7 +2232,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         print(f"Processed {filename}: Results saved to {output_path}")
         
         if len(bottoms) > 0:# and frame_count == 80:
-            closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
+            #closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
             draw_cubes_in_3d(bottoms, heights, colors, closest_points_3d)
             #draw_3d_points_with_hull(ext_3d)
             #draw_cubes_with_bounding_image(box_image, bottoms, heights, colors)

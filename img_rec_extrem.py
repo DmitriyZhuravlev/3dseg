@@ -248,6 +248,20 @@ def draw_cube(image,
     - color: The color to use for drawing (default: red).
     - thickness: The line thickness (default: 1).
     """
+
+    # for i, point in enumerate(lower_face):
+        # # Define the color for the circle
+        # color_i=list(cv_colors)[i % len(cv_colors)].value
+
+        # # Draw the circle
+        # cv2.circle(
+            # image,
+            # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+            # radius=15,  # Circle radius
+            # color=color_i,
+            # thickness=-1  # Filled circle
+        # )    
+
     # Ensure both faces are numpy arrays with 4 points each
     lower_face = np.array(lower_face, dtype=np.int32).reshape((-1, 1, 2))
     upper_face = np.array(upper_face, dtype=np.int32).reshape((-1, 1, 2))
@@ -272,6 +286,8 @@ def draw_cube(image,
                  tuple(upper_face[upper_idx][0]),
                  color=color,
                  thickness=thickness)
+             
+
 
     return image
 
@@ -1756,7 +1772,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 )
 
             avg_bottom_3d = [
-                [x, y, 0] for x, y in [(object_length, 0), (object_length, object_width), (0, object_width), (0, 0)]
+                [x, y, 0] for x, y in [ (0, 0), (object_length, 0), (object_length, object_width), (0, object_width)]
             ]
     
             bottoms.append(np.array(avg_bottom_3d))
@@ -1766,24 +1782,24 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
             colors.append(plt_color)
             
-            closest_points_3d, closest_points_2d = find_closest_3d_point([extrem[0]], pr_boxes, bottoms, heights)
+            #closest_points_3d, closest_points_2d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
             
-            # Draw circles on the lower face points
-            for i, point in enumerate(closest_points_2d):
-                # Define the color for the circle
-                color=list(cv_colors)[i + 10 % len(cv_colors)].value
+            # # Draw circles on the lower face points
+            # for i, point in enumerate(closest_points_2d):
+                # # Define the color for the circle
+                # color=list(cv_colors)[i + 10 % len(cv_colors)].value
         
-                # Draw the circle
-                cv2.circle(
-                    box_image,
-                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                    radius=25,  # Circle radius
-                    color=cv_colors.ORANGE.value,
-                    thickness=-1  # Filled circle
-                )
+                # # Draw the circle
+                # cv2.circle(
+                    # box_image,
+                    # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    # radius=15,  # Circle radius
+                    # color=cv_colors.ORANGE.value,
+                    # thickness=-1  # Filled circle
+                # )
             
-            for i, pt in enumerate(closest_points_3d):
-                 print(f"Point {i}: {pt}, Type: {type(pt)}, Shape: {np.shape(pt) if isinstance(pt, np.ndarray) else 'N/A'}")
+            # for i, pt in enumerate(closest_points_3d):
+                 # print(f"Point {i}: {pt}, Type: {type(pt)}, Shape: {np.shape(pt) if isinstance(pt, np.ndarray) else 'N/A'}")
 
             reflect = False #True
 
@@ -1816,7 +1832,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             height = calc_height(lower_face, upper_face, pr_upper_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height)
             z = object_height - height
 
-            avg_bottom_3d = [[max(0, min(x, object_length)), max(0, min(y, object_width)), z] for x, y in pr_upper_face]
+            #avg_bottom_3d = [[max(0, min(x, object_length)), max(0, min(y, object_width)), z] for x, y in pr_upper_face]
+            avg_bottom_3d = [[x, y, z] for x, y in pr_upper_face]
             
             bottoms.append(np.array(avg_bottom_3d))
             pr_boxes.append((lower_face, upper_face))
@@ -2135,6 +2152,24 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         right_u = extrem[4]
 
         extrem = [down, top, left_v, right_v, left, right_u]
+        
+        closest_points_3d, closest_points_2d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
+        # Draw circles on the lower face points
+        for i, point in enumerate(closest_points_2d):
+            # Define the color for the circle
+            color=list(cv_colors)[i + 10 % len(cv_colors)].value
+    
+            # Draw the circle
+            cv2.circle(
+                marked_image,
+                center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                radius=25,  # Circle radius
+                color=cv_colors.RED.value,
+                thickness=-1  # Filled circle
+            )
+        
+        for i, pt in enumerate(closest_points_3d):
+             print(f"Point {i}: {pt}, Type: {type(pt)}, Shape: {np.shape(pt) if isinstance(pt, np.ndarray) else 'N/A'}")
 
         
         ext_labels = labels #segment_mask(mask, extrem)
@@ -2163,35 +2198,21 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             top_ipm_left = cv2.getPerspectiveTransform(pts3, pts2)
 
 
-            print("Drawing Cube")
-            # Draw 3D cube
-            draw_cube(
-                marked_image,
-                lower_face.astype("int"),
-                upper_face.astype("int"),
-                color=list(cv_colors)[len(cv_colors) - 1].value,
-                thickness=3
-            )
-            # Draw circles on the lower face points
-            for i, point in enumerate(lower_face):
-                # Define the color for the circle
-                color=list(cv_colors)[i % len(cv_colors)].value
+            # print("Drawing Cube")
+            # # Draw 3D cube
+            # draw_cube(
+                # marked_image,
+                # lower_face.astype("int"),
+                # upper_face.astype("int"),
+                # color=list(cv_colors)[len(cv_colors) - 1].value,
+                # thickness=3
+            # )
+            # # Draw circles on the lower face points
+            # for i, point in enumerate(lower_face):
+                # # Define the color for the circle
+                # color=list(cv_colors)[i % len(cv_colors)].value
         
-                # Draw the circle
-                cv2.circle(
-                    marked_image,
-                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                    radius=15,  # Circle radius
-                    color=color,
-                    thickness=-1  # Filled circle
-                )
-                
-            # Draw circles on the lower face points
-            for i, point in enumerate(extrem):
-                # Define the color for the circle
-                color=list(cv_colors)[i + 10 % len(cv_colors)].value
-        
-                # Draw the circle
+                # # Draw the circle
                 # cv2.circle(
                     # marked_image,
                     # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
@@ -2199,6 +2220,20 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                     # color=color,
                     # thickness=-1  # Filled circle
                 # )
+                
+            # # Draw circles on the lower face points
+            # for i, point in enumerate(extrem):
+                # # Define the color for the circle
+                # color=list(cv_colors)[i + 10 % len(cv_colors)].value
+        
+                # # Draw the circle
+                # # cv2.circle(
+                    # # marked_image,
+                    # # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                    # # radius=15,  # Circle radius
+                    # # color=color,
+                    # # thickness=-1  # Filled circle
+                # # )
 
 
 

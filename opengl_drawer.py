@@ -4,6 +4,28 @@ import numpy as np
 import cv2
 #import trimesh
 #from scipy.spatial import ConvexHull
+from enum import Enum
+class cv_colors(Enum):
+    RED = (0, 0, 255)
+    GREEN = (0, 255, 0)
+    BLUE = (255, 0, 0)
+    ORANGE = (44, 162, 247)
+    PURPLE = (247, 44, 200)
+    MINT = (239, 255, 66)
+    YELLOW = (2, 255, 250)
+    CYAN = (255, 255, 0)
+    MAGENTA = (255, 0, 255)
+    GRAY = (128, 128, 128)
+    LIGHT_BLUE = (173, 216, 230)
+    DARK_GREEN = (0, 100, 0)
+    BROWN = (42, 42, 165)
+    PINK = (203, 192, 255)
+    GOLD = (0, 215, 255)
+    SILVER = (192, 192, 192)
+    TEAL = (128, 128, 0)
+    NAVY = (128, 0, 0)
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
 
 def generate_random_color():
     """Generates a random color and returns it in both BGR (for cv2) and RGB (for plt) formats."""
@@ -144,13 +166,18 @@ def draw_cubes_in_3d(lower_faces, heights, colors, closest_points_3d=None):
 
         # Draw 3D bounding boxes
         for lower_face, height, color in zip(lower_faces, heights, colors):
-            draw_3d_bounding_box(ax, lower_face, height, color=color)
+            if color is not None:
+                draw_3d_bounding_box(ax, lower_face, height, color=color)
 
         # Draw closest 3D points (if provided)
         if closest_points_3d:
-            closest_points_3d = np.array(closest_points_3d)
-            ax.scatter(closest_points_3d[:, 0], closest_points_3d[:, 1], closest_points_3d[:, 2],
-                       color="red", s=50, label="Closest Points")
+            #closest_points_3d = np.array(closest_points_3d)
+            for i, point in enumerate(closest_points_3d):
+                cv = list(cv_colors)[(i) % len(cv_colors)].value  # Ensure unique colors
+                color = [c / 255.0 for c in cv[::-1]]  # Normalize for plt
+                ax.scatter(point[0], point[1], point[2], color=color, s=100, label=f"Closest Point {i}")
+                    # ax.scatter(closest_points_3d[:, 0], closest_points_3d[:, 1], closest_points_3d[:, 2],
+                               # color="red", s=50, label="Closest Points")
 
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
@@ -163,11 +190,12 @@ def draw_cubes_in_3d(lower_faces, heights, colors, closest_points_3d=None):
         plt.pause(0.001)
 
         print("Press any key to update, close the window to exit...")
-        plt.waitforbuttonpress()  # Now it waits but doesn't break the loop
+        if plt.waitforbuttonpress():  # Now it waits but doesn't break the loop
+            break
 
     plt.ioff()  # Turn off interactive mode when the window is closed
     
-def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors):
+def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, colors, closest_points_3d=None):
     """
     Display the bounding_box_image on the left and draw 3D bounding boxes on the right.
     """
@@ -189,13 +217,23 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
         # Right: Display the 3D bounding boxes
         ax_3d.cla()  # Clear the 3D plot
         for lower_face, height, color in zip(lower_faces, heights, colors):
-            draw_3d_bounding_box(ax_3d, lower_face, height, color=color)
+            if color is not None:
+                draw_3d_bounding_box(ax_3d, lower_face, height, color=color)
+                
+        # Draw closest 3D points (if provided)
+        if closest_points_3d:
+            #closest_points_3d = np.array(closest_points_3d)
+            for i, point in enumerate(closest_points_3d):
+                cv = list(cv_colors)[(i) % len(cv_colors)].value  # Ensure unique colors
+                color = [c / 255.0 for c in cv[::-1]]  # Normalize for plt
+                ax_3d.scatter(point[0], point[1], point[2], color=color, s=100, label=f"Closest Point {i}")
 
         ax_3d.set_xlabel('X')
         ax_3d.set_ylabel('Y')
         ax_3d.set_zlabel('Z')
         ax_3d.set_title("3D Bounding Boxes")
         #set_equal_axes(ax_3d)  # Ensure equal scaling for the 3D plot
+        ax_3d.set_aspect('equal', adjustable='box')
 
         # plt.draw()
         # plt.pause(0.001)  # Small delay for interactive updates
@@ -210,33 +248,33 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
     plt.show()
 
 
-def draw_3d_points_with_hull(ext_3d):
-    # Validate and filter points
-    points = np.array([p for p in ext_3d if isinstance(p, (list, tuple, np.ndarray)) and len(p) == 3], dtype=np.float64)
+# def draw_3d_points_with_hull(ext_3d):
+    # # Validate and filter points
+    # points = np.array([p for p in ext_3d if isinstance(p, (list, tuple, np.ndarray)) and len(p) == 3], dtype=np.float64)
 
-    if len(points) < 4:  # Convex Hull needs at least 4 non-coplanar points
-        raise ValueError(f"Insufficient valid 3D points. Found {len(points)} valid points.")
-    else:
-        print(f"3D points number: {len(points)}")
+    # if len(points) < 4:  # Convex Hull needs at least 4 non-coplanar points
+        # raise ValueError(f"Insufficient valid 3D points. Found {len(points)} valid points.")
+    # else:
+        # print(f"3D points number: {len(points)}")
 
-    # Compute Convex Hull
-    hull = ConvexHull(points)
+    # # Compute Convex Hull
+    # hull = ConvexHull(points)
 
-    # Plot 3D Points
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
-    ax.scatter(points[:, 0], points[:, 1], points[:, 2], color="blue", marker="o")
+    # # Plot 3D Points
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection="3d")
+    # ax.scatter(points[:, 0], points[:, 1], points[:, 2], color="blue", marker="o")
 
 
-    # Draw Convex Hull
-    for simplex in hull.simplices:
-        ax.plot(points[simplex, 0], points[simplex, 1], points[simplex, 2], "r-")
+    # # Draw Convex Hull
+    # for simplex in hull.simplices:
+        # ax.plot(points[simplex, 0], points[simplex, 1], points[simplex, 2], "r-")
 
-    # Fill Convex Hull Faces
-    ax.add_collection3d(Poly3DCollection(points[hull.simplices], alpha=0.2, edgecolor="r"))
+    # # Fill Convex Hull Faces
+    # ax.add_collection3d(Poly3DCollection(points[hull.simplices], alpha=0.2, edgecolor="r"))
 
-    ax.set_aspect('equal', adjustable='box')
-    plt.show()
+    # ax.set_aspect('equal', adjustable='box')
+    # plt.show()
 
 
 

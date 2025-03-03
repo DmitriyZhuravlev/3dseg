@@ -1763,6 +1763,14 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 top_inv_ipm_left = cv2.getPerspectiveTransform(pts1, pts3)
                 top_ipm_left = cv2.getPerspectiveTransform(pts3, pts2)
 
+                # Draw 3D cube
+                draw_cube(
+                    marked_image,
+                    lower_face.astype("int"),
+                    upper_face.astype("int"),
+                    color=cv_colors.BLACK.value,
+                    thickness=7
+                )
                 ## Draw circles on the lower face points
                 for i, point in enumerate(extrem):
                     # Define the color for the circle
@@ -1812,7 +1820,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
     
                 #avg_bottom_3d = [[max(0, min(x, object_length)), max(0, min(y, object_width)), z] for x, y in pr_upper_face]
                 avg_bottom_3d = [[x, y, z] for x, y in pr_upper_face]
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                #avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
@@ -2169,12 +2177,12 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             xmin = min(x[0] for x in closest_points_3d)
             xmax = max(x[0] for x in closest_points_3d)
 
-            xmin = max(xmin, g_xmin)
-            xmax = min(xmax, g_xmax)
-            ymin = max(ymin, g_ymin)
-            ymax = min(ymax, g_ymax)
-            zmin = max(zmin, g_zmin)
-            zmax = min(zmax, g_zmax)
+            # xmin = max(xmin, g_xmin)
+            # xmax = min(xmax, g_xmax)
+            # ymin = max(ymin, g_ymin)
+            # ymax = min(ymax, g_ymax)
+            # zmin = max(zmin, g_zmin)
+            # zmax = min(zmax, g_zmax)
 
             if False and len(bottoms) > 0:# and frame_count == 80:
                 #closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)

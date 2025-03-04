@@ -1699,7 +1699,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         g_xmin = xmin = 0
         g_xmax = xmax = 21
         g_ymin = ymin = 0
-        g_ymax = ymax = 7
+        g_object_width = g_ymax = ymax = 7
         g_zmin = zmin = 0
         g_zmax = zmax = 7
         
@@ -1717,10 +1717,10 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
 
         count = 0
         
-        reflect = False #True
+        reflect = True
         mark = False
 
-        while np.any(full_mask) and count < 2:
+        while np.any(full_mask):# and count < 2:
             count += 1
             print(f"iteration: {count}")
 
@@ -1764,38 +1764,38 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 top_ipm_left = cv2.getPerspectiveTransform(pts3, pts2)
 
                 # Draw 3D cube
-                draw_cube(
-                    marked_image,
-                    lower_face.astype("int"),
-                    upper_face.astype("int"),
-                    color=cv_colors.BLACK.value,
-                    thickness=7
-                )
+                # draw_cube(
+                    # marked_image,
+                    # lower_face.astype("int"),
+                    # upper_face.astype("int"),
+                    # color=cv_colors.BLACK.value,
+                    # thickness=7
+                # )
                 ## Draw circles on the lower face points
-                for i, point in enumerate(extrem):
-                    # Define the color for the circle
-                    color=list(cv_colors)[(i + count) % (len(cv_colors)-1)].value
+                # for i, point in enumerate(extrem):
+                    # # Define the color for the circle
+                    # color=list(cv_colors)[(i + count) % (len(cv_colors)-1)].value
             
-                    # Draw the circle
-                    cv2.circle(
-                        marked_image,
-                        center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                        radius=15,  # Circle radius
-                        color=color,
-                        thickness=-1  # Filled circle
-                    )
+                    # # Draw the circle
+                    # cv2.circle(
+                        # marked_image,
+                        # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
+                        # radius=15,  # Circle radius
+                        # color=color,
+                        # thickness=-1  # Filled circle
+                    # )
     
-                avg_bottom_3d = [
-                    [x, y, zmin] for x, y in [ (xmin, ymin), (xmin + object_length, ymin), (xmin + object_length, ymin + object_width), (xmin, ymin + object_width)]
-                ]
+                # avg_bottom_3d = [
+                    # [x, y, zmin] for x, y in [ (xmin, ymin), (xmin + object_length, ymin), (xmin + object_length, ymin + object_width), (xmin, ymin + object_width)]
+                # ]
     
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                bottoms.append(np.array(avg_bottom_3d))
-                pr_boxes.append((lower_face, upper_face))
-                heights.append(object_height)
-                cv2_color = cv_colors.GRAY.value
-                plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                colors.append(plt_color)
+                # avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                # bottoms.append(np.array(avg_bottom_3d))
+                # pr_boxes.append((lower_face, upper_face))
+                # heights.append(object_height)
+                # cv2_color = cv_colors.GRAY.value
+                # plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                # colors.append(plt_color)
     
     
     
@@ -1820,7 +1820,8 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
     
                 #avg_bottom_3d = [[max(0, min(x, object_length)), max(0, min(y, object_width)), z] for x, y in pr_upper_face]
                 avg_bottom_3d = [[x, y, z] for x, y in pr_upper_face]
-                #avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
@@ -1830,14 +1831,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([top_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_upper_face]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1881,14 +1884,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([down_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_lower_face]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1931,14 +1936,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([left_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_lower_face]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1991,14 +1998,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([left_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[xmin, g_object_width - ymin - object_width + width, z], [xmin + length, g_object_width - ymin - object_width + width, z], [xmin + length, g_object_width - ymin - object_width, z], [xmin, g_object_width - ymin - object_width, z]]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -2054,14 +2063,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([right_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[xmin + object_length - length, g_object_width - ymin, z], [xmin + object_length, g_object_width - ymin, z], [xmin + object_length, g_object_width - ymin - width, z], [xmin + object_length - length, g_object_width - ymin - width, z]]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -2111,14 +2122,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 colors.append(plt_color)
                 
                 if reflect:
-                    # Reflect the lower face and add the reflected data
-                    reflected_bottom = reflect_segment(np.array(avg_bottom_3d), object_width)
-                    bottoms.append(reflected_bottom)
-                    heights.append(height)  # Symmetric object, height remains the same
-                    colors.append(plt_color)  # Use the same color for symmetry
-                    
-                    reflect_3d = reflect_segment(np.array([right_3d]), object_width)
-                    #ext_3d.append(reflect_3d[0])
+                    avg_bottom_3d = [[xmin + object_length - length, g_object_width - ymin - object_width + width, z], [xmin + object_length, g_object_width - ymin - object_width + width, z], [xmin + object_length, g_object_width - ymin - object_width, z], [xmin + object_length - length, g_object_width - ymin - object_width, z]]
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
+                    bottoms.append(np.array(avg_bottom_3d))
+                    pr_boxes.append((lower_face, upper_face))
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:

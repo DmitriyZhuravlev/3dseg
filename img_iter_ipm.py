@@ -3,9 +3,14 @@ import numpy as np
 import os
 from opengl_drawer import *
 #from shapely.geometry import Polygon
-from shapely.geometry import LineString, Point, Polygon
+#from shapely.geometry import LineString, Point, Polygon
 from scipy.spatial import ConvexHull
 #import flowiz as fz
+
+from graph import *
+from cube import *
+
+
 
 from lifting import *
 from enum import Enum
@@ -137,34 +142,7 @@ def find_boundary_with_diff(moving_mask):
 
     return boundary_mask
     
-def find_tangent_points(mask_center, hull_points, vp):
 
-   # Step 3: Calculate the reference angle (line from VP to mask center)
-    ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
-
-    # Step 4: Compute angles for all boundary points
-    tangent_candidates = []
-    for vertex in hull_points:
-        angle = np.arctan2(vertex[1] - vp[1], vertex[0] - vp[0])  # Angle from VP to vertex
-        angle_diff = angle - ref_angle
-
-        # Normalize angle difference to be in range [-π, π]
-        angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
-
-        tangent_candidates.append((angle_diff, vertex))
-
-    # Step 5: Find the maximum positive and negative angle differences
-    positive_angle_candidate = max(tangent_candidates, key=lambda x: x[0])
-    negative_angle_candidate = min(tangent_candidates, key=lambda x: x[0])
-
-    pos_point = positive_angle_candidate[1]
-    neg_point = negative_angle_candidate[1]
-
-    # Step 6: Compute the tangent line equations in homogeneous coordinates
-    pos_line = np.cross([vp[0], vp[1], 1], [pos_point[0], pos_point[1], 1])
-    neg_line = np.cross([vp[0], vp[1], 1], [neg_point[0], neg_point[1], 1])
-
-    return pos_point, pos_line, neg_point, neg_line
 
 
     
@@ -198,316 +176,59 @@ def extract_segment_pixels(boundary_mask, pos_point, neg_point):
     segment_pixels = [(x, y) for x, y in segment]
     return segment_pixels
     
-def get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
-    #mask = (labels == label)
-    lower_face, upper_face = None, None
-    extrem = None
-    ys, xs = np.where(mask)
-    
-    if xs.size > 0 and ys.size > 0:
-        # Compute boundary points
-        x_min, x_max = np.min(xs), np.max(xs)
-        y_min, y_max = np.min(ys), np.max(ys)
-        top_point = (xs[np.argmin(ys)], y_min)
-        bottom_point = (xs[np.argmax(ys)], y_max)
-        left_point = (x_min, ys[np.argmin(xs)])
-        right_point = (x_max, ys[np.argmax(xs)])
-        
-        # Collect all points in the mask
-        points = np.argwhere(mask > 0)[:, [1, 0]]  # Switch to (x, y) format
-        
-        if len(points) < 3:
-            # Skip segments with fewer than 3 points
-            return None, None, None
-        
-        # Calculate mask center
-        mask_center = np.mean(points, axis=0)
-        
-        # Compute 3D box from plain mask
-        try:
-            lower_face, upper_face, extrem = compute_3d_box_from_plain_mask_new(
-                mask, vert_vp, hor_left_vp, hor_right_vp, debug)
-        except Exception as e:
-            print(f"Error processing segment with label")# {label}: {e}")
-            return None, None, None
-        
-    return lower_face, upper_face, extrem
-    
-def draw_cube(image,
-              lower_face,
-              upper_face,
-              color=cv_colors.RED.value,
-              thickness=1):
-    """
-    Draws a cube using the provided lower and upper faces, handling index mismatches.
-    Draws the lower and upper faces and the vertical lines connecting corresponding vertices.
-    
-    Args:
-    - image: The image on which to draw.
-    - lower_face: np.array of shape (4, 2), lower face of the cube.
-    - upper_face: np.array of shape (4, 2), upper face of the cube.
-    - color: The color to use for drawing (default: red).
-    - thickness: The line thickness (default: 1).
-    """
-
-    # for i, point in enumerate(lower_face):
-        # # Define the color for the circle
-        # color_i=list(cv_colors)[i % (len(cv_colors)-1)].value
-
-        # # Draw the circle
-        # cv2.circle(
-            # image,
-            # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-            # radius=15,  # Circle radius
-            # color=color_i,
-            # thickness=-1  # Filled circle
-        # )    
-
-    # Ensure both faces are numpy arrays with 4 points each
-    lower_face = np.array(lower_face, dtype=np.int32).reshape((-1, 1, 2))
-    upper_face = np.array(upper_face, dtype=np.int32).reshape((-1, 1, 2))
-
-    # Draw the lower and upper faces as quadrilaterals
-    cv2.polylines(image, [lower_face],
-                  isClosed=True,
-                  color=color,
-                  thickness=thickness)
-    cv2.polylines(image, [upper_face],
-                  isClosed=True,
-                  color=color,
-                  thickness=thickness)
-
-    # Define the index mapping between lower and upper face
-    index_mapping = [(0, 0), (1, 1), (2, 2), (3, 3)]
-
-    # Draw vertical lines connecting corresponding points based on index mapping
-    for lower_idx, upper_idx in index_mapping:
-        cv2.line(image,
-                 tuple(lower_face[lower_idx][0]),
-                 tuple(upper_face[upper_idx][0]),
-                 color=color,
-                 thickness=thickness)
-             
 
 
-    return image
 
-def compute_3d_box_from_plain_mask_new(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False):
+# def find_neighbors_within_mask(labels, e=10):
+    # # Initialize the dictionary with each unique label
+    # neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
 
-    # Step 1: Extract non-zero points (boundary of the mask)
-    points = np.argwhere(mask > 0)  # Extract all non-zero pixel coordinates (row, col)
-    points = points[:, [1, 0]]  # Switch to (x, y) format for consistency
+    # # Iterate through each pixel in the labels array
+    # for y in range(labels.shape[0]):
+        # for x in range(labels.shape[1]):
+            # current_label = labels[y, x]
 
-    if len(points) < 3:
-        raise ValueError(f"Not enough points in mask for a valid polygon. Found {len(points)} points.")
-
-    # Step 2: Compute Convex Hull for a clean boundary
-    #hull = ConvexHull(points)
-    hull_points = points #points[hull.vertices]
-    #polygon = Polygon(hull_points)  # Create a polygon using the convex hull
-
-    # Step 3: Calculate the reference angle (line from VP to mask center)
-    mask_center = np.mean(hull_points, axis=0)  # Centroid of the convex hull
-    #ref_angle = np.arctan2(mask_center[1] - vp[1], mask_center[0] - vp[0])
-    # TODO left, right ?
-    point_b, line2, point_a, line1 = find_tangent_points(mask_center, hull_points, hor_right_vp)
-    point_d, line4, point_c, line3  = find_tangent_points(mask_center, hull_points, vert_vp)
-    # TODO check orientation
-    point_f, line6, point_e, line5  = find_tangent_points(mask_center, hull_points, hor_left_vp)
-
-    extrem = [point_a, point_b, point_c, point_d, point_e, point_f]
-    # Step 2: Compute intersections for corners
-    def compute_intersection(line1, line2):
-        """Compute the intersection of two lines in homogeneous coordinates."""
-        inter = np.cross(line1, line2)
-        if inter[2] != 0:
-            return inter[:2] / inter[2]
-        return None  # Parallel lines
-
-    corner_a = compute_intersection(line1, line6)
-    corner_c = compute_intersection(line6, line3)
-    corner_b = compute_intersection(line4, line1)
-    
-    
-    
-    
-    # Step 3: Calculate corner H
-    if corner_c is not None and corner_b is not None:
-        line_c_h = LineString([corner_c, hor_right_vp])
-        line_b_h = LineString([corner_b, hor_left_vp])
-        if line_c_h.intersects(line_b_h):
-            intersection_point = line_c_h.intersection(line_b_h)
-            if intersection_point.geom_type == "Point":
-                corner_h = (intersection_point.x, intersection_point.y)
-            else:
-                corner_h = None  # Handle unexpected intersection types (e.g., LineString)
-        else:
-            corner_h = None
-    else:
-        corner_h = None
-
-    epsilon = 1e-1  # Small shift value
-    if corner_h is None:
-        # Slightly shift corner_c and corner_b if no intersection exists
-        shifted_corner_c = (corner_c[0] + epsilon, corner_c[1] + epsilon)
-        shifted_corner_b = (corner_b[0] - epsilon, corner_b[1] - epsilon)
-        
-        line_c_h = LineString([shifted_corner_c, hor_right_vp])
-        line_b_h = LineString([shifted_corner_b, hor_left_vp])
-        
-        if line_c_h.intersects(line_b_h):
-            intersection_point = line_c_h.intersection(line_b_h)
-            if intersection_point.geom_type == "Point":
-                corner_h = (intersection_point.x, intersection_point.y)
-                print("Found with epsilon")
-            else:
-                corner_h = None  # Handle unexpected intersection types
-        else:
-            corner_h = None
-
-    # if corner_h is None:
-        # # Slightly shift corner_c and corner_b if no intersection exists
-        # shifted_corner_c = (corner_c[0] + epsilon, corner_c[1] + epsilon)
-        # shifted_corner_b = (corner_b[0] - epsilon, corner_b[1] - epsilon)
-        
-        # line_c_h = LineString([shifted_corner_c, hor_right_vp])
-        # line_b_h = LineString([shifted_corner_b, hor_left_vp])
-        
-        # if line_c_h.intersects(line_b_h):
-            # intersection_point = line_c_h.intersection(line_b_h)
-            # if intersection_point.geom_type == "Point":
-                # corner_h = (intersection_point.x, intersection_point.y)
-            # else:
-                # corner_h = None  # Handle unexpected intersection types
-        # else:
-            # corner_h = None
-    
-    
-    corner_c1 = compute_intersection(line2, line3)
-    corner_b1 = compute_intersection(line5, line4)
-
-    corner_a11 = get_intersect(hor_left_vp, corner_c1, vert_vp, corner_a)
-    corner_a12 = get_intersect(hor_right_vp, corner_b1, vert_vp, corner_a)
-    
-    corner_a1 = corner_a11 if corner_a11[1] < corner_a12[1] else corner_a12
-    corner_c1 = get_intersect(hor_left_vp, corner_a1, vert_vp, corner_c)
-    corner_b1 = get_intersect(hor_right_vp, corner_a1, vert_vp, corner_b)
-
-    center = get_intersect(corner_c, corner_b, corner_a, corner_h)
-    center1 = get_intersect(corner_c1, corner_b1, vert_vp, center)
-    corner_h1 = get_intersect(corner_a1, center1, vert_vp, corner_h)
-
-    # Compile the list of corners (including `corner_a` again to close the loop)
-    corners = [corner_a, corner_b, corner_h, corner_c, corner_a]
-    corners1 = [corner_a1, corner_b1, corner_h1, corner_c1, corner_a1]
-    
-    # Debugging and visualization
-    if debug:
-        plt.imshow(mask, cmap='gray')  # Show the mask in the background
-    
-        # Function to safely plot points
-        def plot_point(corner, color, label, marker='o'):
-            if corner is not None and len(corner) == 2:
-                plt.scatter(*corner, color=color, marker=marker, label=label)
-   
-        def draw_line_segment(vp, point, color):
-            if vp is not None and point is not None:
-                plt.plot([vp[0], point[0]], [vp[1], point[1]], color=color, linestyle="--") 
-  
-      
-        plot_point(corner_a, 'red', "corner a")
-        plot_point(corner_b, 'blue', "corner b")
-        plot_point(corner_c, 'green', "corner c")
-        plot_point(corner_h, 'yellow', "corner h")
-        
-        plot_point(corner_a1, 'red', "corner a1")
-        plot_point(corner_b1, 'blue', "corner b1")
-        plot_point(corner_c1, 'green', "corner c1")
-        plot_point(corner_h1, 'yellow', "corner h1")
-    
-        # Plot tangent lines
-        draw_line_segment(hor_right_vp, point_a, 'red')
-        draw_line_segment(hor_right_vp, point_b, 'red')
-        draw_line_segment(vert_vp, point_c, 'blue')
-        draw_line_segment(vert_vp, point_d, 'blue')
-        draw_line_segment(hor_left_vp, point_e, 'green')
-        draw_line_segment(hor_left_vp, point_f, 'green')
-        # plot_point(corner_a, 'teal', "corner_a")
-        # plot_point(corner_c, 'green', "corner_c")
-        # plot_point(corner_b, 'yellow', "corner_b")
-
-
-    
-        # Filter valid corners for visualization
-        valid_corners = [corner for corner in corners if corner is not None]
-        valid_corners1 = [corner for corner in corners1 if corner is not None]
-    
-        # Zoom into the mask region
-        rows, cols = np.where(mask)
-        if rows.size > 0 and cols.size > 0:
-            plt.xlim([cols.min() - 10, cols.max() + 10])
-            plt.ylim([rows.max() + 10, rows.min() - 10])  # Invert y-axis for correct orientation
-    
-        # Show legend and final plot
-        plt.legend()
-        plt.show()
-        
-    # print([corner_a, corner_b, corner_h, corner_c])
-    # print([corner_a1, corner_b1, corner_h1, corner_c1])
-
-    return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1]), np.array(extrem)
-
-
-def find_neighbors_within_mask(labels, e=10):
-    # Initialize the dictionary with each unique label
-    neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
-
-    # Iterate through each pixel in the labels array
-    for y in range(labels.shape[0]):
-        for x in range(labels.shape[1]):
-            current_label = labels[y, x]
-
-            # Only proceed if the current pixel is within the moving mask
-            if current_label == 0:
-                continue
-
-            # Define neighbor pixel offsets within epsilon distance
-            neighbors = {
-                'top': (y - e, x),
-                'bottom': (y + e, x),
-                'left': (y, x - e),
-                'right': (y, x + e),
-                'top-left': (y - e, x - e),
-                'top-right': (y - e, x + e),
-                'bottom-left': (y + e, x - e),
-                'bottom-right': (y + e, x + e),
-            }
-
-            # Iterate through the neighboring directions
-            for direction, (ny, nx) in neighbors.items():
-                # Skip neighbors that are out of bounds
-                if ny < 0 or ny >= labels.shape[
-                        0] or nx < 0 or nx >= labels.shape[1]:
-                    continue
-
-                # Skip if neighbor is outside the moving mask
-                # if moving_mask[ny, nx] == 0:
+            # # Only proceed if the current pixel is within the moving mask
+            # if current_label == 0:
                 # continue
 
-                neighbor_label = labels[ny, nx]
-                if neighbor_label == 0:
-                    continue
+            # # Define neighbor pixel offsets within epsilon distance
+            # neighbors = {
+                # 'top': (y - e, x),
+                # 'bottom': (y + e, x),
+                # 'left': (y, x - e),
+                # 'right': (y, x + e),
+                # 'top-left': (y - e, x - e),
+                # 'top-right': (y - e, x + e),
+                # 'bottom-left': (y + e, x - e),
+                # 'bottom-right': (y + e, x + e),
+            # }
 
-                # Only add if neighbor label is different from current label
-                if neighbor_label != current_label:
-                    if neighbor_label not in neighbors_dict[current_label]:
-                        neighbors_dict[current_label][neighbor_label] = set()
+            # # Iterate through the neighboring directions
+            # for direction, (ny, nx) in neighbors.items():
+                # # Skip neighbors that are out of bounds
+                # if ny < 0 or ny >= labels.shape[
+                        # 0] or nx < 0 or nx >= labels.shape[1]:
+                    # continue
 
-                    # Record the direction of this neighbor relative to current label
-                    neighbors_dict[current_label][neighbor_label].add(
-                        direction)
+                # # Skip if neighbor is outside the moving mask
+                # # if moving_mask[ny, nx] == 0:
+                # # continue
 
-    return neighbors_dict
+                # neighbor_label = labels[ny, nx]
+                # if neighbor_label == 0:
+                    # continue
+
+                # # Only add if neighbor label is different from current label
+                # if neighbor_label != current_label:
+                    # if neighbor_label not in neighbors_dict[current_label]:
+                        # neighbors_dict[current_label][neighbor_label] = set()
+
+                    # # Record the direction of this neighbor relative to current label
+                    # neighbors_dict[current_label][neighbor_label].add(
+                        # direction)
+
+    # return neighbors_dict
 
 def calc_height(lower_face, upper_face, bottom_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height):
     proj_height = np.linalg.norm(lower_face[0] - upper_face[0])  # height
@@ -539,44 +260,44 @@ def faces_overlap(face1, face2, region_size, k=0.1):
     # Check if the buffered polygons intersect (overlap)
     return p1_buffered.intersects(p2_buffered)
     
-# Utility function to check face overlap in BEV and return intersection size
-def faces_overlap_area(face1, face2, region_size, k=0.1):
-    """
-    Compute the overlap between two faces in BEV and return the intersection size.
+# # Utility function to check face overlap in BEV and return intersection size
+# def faces_overlap_area(face1, face2, region_size, k=0.1):
+    # """
+    # Compute the overlap between two faces in BEV and return the intersection size.
     
-    Args:
-        face1 (list): Coordinates of the first face corners [(x1, y1), (x2, y2), ...].
-        face2 (list): Coordinates of the second face corners [(x1, y1), (x2, y2), ...].
-        region_size (float): Approximate size of the region, used for scaling epsilon.
-        k (float): Scaling factor for epsilon (default: 0.1).
+    # Args:
+        # face1 (list): Coordinates of the first face corners [(x1, y1), (x2, y2), ...].
+        # face2 (list): Coordinates of the second face corners [(x1, y1), (x2, y2), ...].
+        # region_size (float): Approximate size of the region, used for scaling epsilon.
+        # k (float): Scaling factor for epsilon (default: 0.1).
         
-    Returns:
-        float: Intersection size (area of overlap) between the two faces.
-    """
-    # Compute epsilon based on region_size
-    epsilon = k * region_size
+    # Returns:
+        # float: Intersection size (area of overlap) between the two faces.
+    # """
+    # # Compute epsilon based on region_size
+    # epsilon = k * region_size
 
-    # If either face is None, return no intersection
-    if face1 is None or face2 is None:
-        return 0.0
+    # # If either face is None, return no intersection
+    # if face1 is None or face2 is None:
+        # return 0.0
 
-    # Define polygons for each face based on the corner points
-    p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
-    p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
+    # # Define polygons for each face based on the corner points
+    # p1 = Polygon([face1[0], face1[1], face1[2], face1[3]])
+    # p2 = Polygon([face2[0], face2[1], face2[2], face2[3]])
 
-    # Expand the polygons slightly by epsilon
-    p1_buffered = p1.buffer(epsilon)
-    p2_buffered = p2.buffer(epsilon)
+    # # Expand the polygons slightly by epsilon
+    # p1_buffered = p1.buffer(epsilon)
+    # p2_buffered = p2.buffer(epsilon)
 
-    # Check if the buffered polygons intersect
-    if p1_buffered.intersects(p2_buffered):
-        # Calculate the intersection polygon
-        intersection = p1_buffered.intersection(p2_buffered)
-        # Return the area of the intersection
-        return intersection.area
+    # # Check if the buffered polygons intersect
+    # if p1_buffered.intersects(p2_buffered):
+        # # Calculate the intersection polygon
+        # intersection = p1_buffered.intersection(p2_buffered)
+        # # Return the area of the intersection
+        # return intersection.area
 
-    # If no intersection, return 0.0
-    return 0.0
+    # # If no intersection, return 0.0
+    # return 0.0
     
 # Utility function to check face overlap in BEV and return IoU
 def faces_overlap_iou(face1, face2, region_size, k=0.1):
@@ -1526,6 +1247,512 @@ def find_closest_3d_point(extrem, pr_boxes, bottoms, heights, excluded = []):
 
     return closest_points, closest_points_pr
 
+def process_segment_orig(f_2d, f_3d, marked_image, segment_label, ext_labels, nbs_dict, processed_labels, bottoms, heights, colors, level = 0, mark = True):
+    """ Process segment and recursively process nbs """
+    
+    # Check if segment was already processed
+    if segment_label in processed_labels:
+        return
+    #if level > 2: return
+    
+    processed_labels.add(segment_label)  # Mark as processed
+    
+    # Get mask for the segment
+    mask = (ext_labels == segment_label)
+    
+    # Extract projected box
+    lower_face, upper_face = f_2d
+    bottom, top = f_3d
+    
+    if lower_face is None or upper_face is None:
+        return  # Skip if projection failed
+
+    cube_2d = get_projected_cube_faces(lower_face, upper_face)  # Get all 6 faces of the cube
+    cube_3d = get_projected_cube_faces(bottom, top)
+
+    print("Original cube 3D faces:", cube_3d)
+
+    # Select relevant faces based on direction
+    face_pairs = {
+        "left": ("right", "left"),   # Check right of current vs left of nb
+        "right": ("left", "right"),  # Check left of current vs right of nb
+        "top": ("lower", "upper"),  # Check back of current vs front of nb
+        "bottom": ("upper", "lower"),   # Check front of current vs back of nb
+    }
+    
+    # Process nbing segments recursively
+    nbs = nbs_dict.get(segment_label, {})
+    
+    for nb_label, directions in nbs.items():  # Get direction info
+        for direction in directions:  # Iterate over each possible direction
+            if nb_label not in processed_labels:
+                # Check overlap before processing nb
+                nb_mask = (ext_labels == nb_label)
+                nb_lower, nb_upper, _ = get_projected_box(nb_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+                nb_lower_3d, nb_upper_3d = None, None
+                if nb_lower is None or nb_upper is None:
+                    continue
+        
+                nb_cube_2d = get_projected_cube_faces(nb_lower, nb_upper)
+
+                if direction in face_pairs:
+                    print(f"direction: {direction}")
+                    face1, face2 = face_pairs[direction]
+        
+                    overlap_area = faces_overlap_area(cube_2d[face1], nb_cube_2d[face2])
+                    if overlap_area > 0:
+                        print(f"Overlap found on {face1} ↔ {face2}, Area = {overlap_area}")
+                        if direction == "left":
+                            # Convert face points to float32 for transformation
+                            pts1 = np.float32(cube_2d[face1])
+
+                            arr = cube_3d[face1].copy()
+                            # Step 1: Remove the first column (x) and keep only the second and third columns
+                            arr = arr[:, 1:]  # This slices the array from the second column onwards (index 1)
+                            # Step 2: Swap the second and third columns (y and z)
+                            arr[:, [0, 1]] = arr[:, [1, 0]]
+
+                            pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                            # Compute Inverse Perspective Mapping (IPM) matrix
+                            ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                        
+                            # Compute distances
+                            dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                            dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                            
+                            print(f"2D distance: {dist_2d}")
+                            print(f"3D distance: {dist_3d}")
+
+                            nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                        
+                            # Compute neighbor's 3D distance using ratio
+                            nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                        
+                            # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                            left_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [z, y]
+                            
+                            # Swap columns to reorder from [z, y] → [y, z]
+                            left_3d = left_3d[:, [1, 0]]
+                            
+                            # Extend to [x, y, z] by adding the correct x-coordinate
+                            left_3d = np.column_stack((np.full(left_3d.shape[0], np.array(cube_3d[face1])[0, 0]), left_3d))
+                            # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                            right_3d = left_3d.copy()  # Copy left_3d structure
+                            right_3d[:, 0] += nb_dist_3d  # Add nb_dist_3d to x-coordinates
+                            
+                            nb_upper_3d = np.array([left_3d[1], right_3d[1], right_3d[2], left_3d[2]])
+                            nb_lower_3d = np.array([left_3d[0], right_3d[0], right_3d[3], left_3d[3]])
+                            
+                            
+                            # print("Right face :", cube_3d[face1])
+                            # print("NB Left face: ", left_3d)
+
+                        if direction == "bottom":
+                            # Convert face points to float32 for transformation
+                            pts1 = np.float32(cube_2d[face1])
+
+                            arr = cube_3d[face1].copy()
+                            # Step 1: Remove the first column (x) and keep only the second and third columns
+                            arr = arr[:, :2]
+
+                            pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                            # Compute Inverse Perspective Mapping (IPM) matrix
+                            ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                        
+                            # Compute distances
+                            dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                            dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                            
+                            print(f"2D distance: {dist_2d}")
+                            print(f"3D distance: {dist_3d}")
+
+                            nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                        
+                            # Compute neighbor's 3D distance using ratio
+                            nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                        
+                            # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                            bottom_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [x, y]
+                            
+                            # Extend to [x, y, z] by adding the correct x-coordinate
+                            nb_lower_3d = np.column_stack(( bottom_3d, np.full(bottom_3d.shape[0], np.array(cube_3d[face1])[0, 2])))
+                            # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                            nb_upper_3d = nb_lower_3d.copy()  # Copy left_3d structure
+                            nb_upper_3d[:, 2] += nb_dist_3d  # Add nb_dist_3d to z-coordinates
+                            
+                    # Mark segment on the image
+                    color = list(cv_colors)[(level+1) % (len(cv_colors) - 1)].value
+                    if mark:
+                        marked_image[nb_mask] = color
+                    if nb_lower is not None and nb_upper is not None:
+                        # Draw 3D cube
+                        draw_cube(
+                            marked_image,
+                            nb_lower.astype("int"),
+                            nb_upper.astype("int"),
+                            color=color,
+                            thickness=4
+                    )
+                if nb_lower_3d is not None and nb_upper_3d is not None:
+                    bottoms.append(nb_lower_3d)
+                    height = (nb_upper_3d - nb_lower_3d)[0, 2]  # [row_index, z_index]
+                    heights.append(height)
+        
+                    cv2_color = list(cv_colors)[(level + 1) % (len(cv_colors) - 1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
+                    # Recursive call to process nb
+                    process_segment((nb_lower, nb_upper), (nb_lower_3d, nb_upper_3d), marked_image, nb_label, ext_labels, nbs_dict, processed_labels, bottoms, heights, colors, level+1, mark)
+                    
+def compute_validity_score(lower_face_3d, upper_face_3d, xmax, ymax, zmax):
+    """ Compute the fraction of the cube within the valid bounding box """
+    
+    # Get min/max coordinates from the set of four points
+    min_x, min_y, min_z = np.min(lower_face_3d, axis=0)
+    max_x, max_y, max_z = np.max(upper_face_3d, axis=0)
+
+    # Compute full cube volume
+    full_volume = max(1e-6, (max_x - min_x) * (max_y - min_y) * (max_z - min_z))  # Avoid division by zero
+
+    # Compute constrained bounding box inside the valid region
+    clipped_min_x = np.clip(min_x, 0, xmax)
+    clipped_max_x = np.clip(max_x, 0, xmax)
+    clipped_min_y = np.clip(min_y, 0, ymax)
+    clipped_max_y = np.clip(max_y, 0, ymax)
+    clipped_min_z = np.clip(min_z, 0, zmax)
+    clipped_max_z = np.clip(max_z, 0, zmax)
+
+    inside_volume = max(0, (clipped_max_x - clipped_min_x) * (clipped_max_y - clipped_min_y) * (clipped_max_z - clipped_min_z))
+
+    return inside_volume / full_volume  # Ratio of the part within the box
+
+def process_segment(xmax, ymax, zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, nbs_dict, processed_labels, bottoms, heights, colors, level=0, mark=True, max_level = 10):
+    """ Process segment and recursively process nbs """
+    
+    if level > max_level: return
+    # Check if segment was already processed
+    # if segment_label in processed_labels:
+        # return
+    
+    # processed_labels[segment_label] = {'iou': 0.0, 'lower_face_3d': None, 'upper_face_3d': None}  # Initialize storage
+    
+    # # Get mask for the segment
+    # mask = (ext_labels == segment_label)
+    
+    # Extract projected box
+    lower_face, upper_face = f_2d
+    bottom, top = f_3d
+    
+    if lower_face is None or upper_face is None:
+        return  # Skip if projection failed
+
+    if bottom is None or top is None:
+        return  # Skip if projection failed
+        
+
+    cube_2d = get_projected_cube_faces(lower_face, upper_face)  # Get all 6 faces of the cube
+    cube_3d = get_projected_cube_faces(bottom, top)
+
+    # Process neighboring segments recursively
+    nbs = nbs_dict.get(segment_label, {})
+    
+    # Select relevant faces based on direction
+    face_pairs = {
+        "left": ("right", "left"),   # Check right of current vs left of nb
+        "right": ("left", "right"),  # Check left of current vs right of nb
+        "top": ("lower", "upper"),  # Check back of current vs front of nb
+        "bottom": ("upper", "lower"),   # Check front of current vs back of nb
+    }
+    
+    for nb_label, directions in nbs.items():
+        for direction in directions:
+            print(f"direction: {direction}")
+
+            nb_mask = (ext_labels == nb_label)
+            nb_lower, nb_upper, _ = get_projected_box(nb_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+            nb_lower_3d, nb_upper_3d = None, None
+            if nb_lower is None or nb_upper is None:
+                continue
+                
+            draw_cube(
+            marked_image,
+            nb_lower.astype("int"),
+            nb_upper.astype("int"),
+            color=cv_colors.BLACK.value,
+            thickness=2
+            )
+            
+            nb_cube_2d = get_projected_cube_faces(nb_lower, nb_upper)
+            
+            if direction in face_pairs:
+                face1, face2 = face_pairs[direction]
+                iou = faces_iou(cube_2d[face1], nb_cube_2d[face2])
+                print(f"IoU: {iou}")
+                
+                #if iou > 0 and (nb_label not in processed_labels or iou > processed_labels[nb_label]['iou']):# or level < processed_labels[nb_label]['level']):
+                if iou > 0 and (nb_label not in processed_labels or level < processed_labels[nb_label]['level']):
+                    
+                    if direction == "left":
+                        # Convert face points to float32 for transformation
+                        pts1 = np.float32(cube_2d[face1])
+
+                        arr = cube_3d[face1].copy()
+                        # Step 1: Remove the first column (x) and keep only the second and third columns
+                        arr = arr[:, 1:]  # This slices the array from the second column onwards (index 1)
+                        # Step 2: Swap the second and third columns (y and z)
+                        arr[:, [0, 1]] = arr[:, [1, 0]]
+
+                        pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                        # Compute Inverse Perspective Mapping (IPM) matrix
+                        ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                    
+                        # Compute distances
+                        dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                        dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                        
+                        print(f"2D distance: {dist_2d}")
+                        print(f"3D distance: {dist_3d}")
+
+                        nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                    
+                        # Compute neighbor's 3D distance using ratio
+                        nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                    
+                        # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                        left_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [z, y]
+                        
+                        # Swap columns to reorder from [z, y] → [y, z]
+                        left_3d = left_3d[:, [1, 0]]
+                        
+                        # Extend to [x, y, z] by adding the correct x-coordinate
+                        left_3d = np.column_stack((np.full(left_3d.shape[0], np.array(cube_3d[face1])[0, 0]), left_3d))
+                        # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                        right_3d = left_3d.copy()  # Copy left_3d structure
+                        right_3d[:, 0] += nb_dist_3d  # Add nb_dist_3d to x-coordinates
+                        
+                        nb_upper_3d = np.array([left_3d[1], right_3d[1], right_3d[2], left_3d[2]])
+                        nb_lower_3d = np.array([left_3d[0], right_3d[0], right_3d[3], left_3d[3]])
+                        
+                        
+                        # print("Right face :", cube_3d[face1])
+                        # print("NB Left face: ", left_3d)
+                        
+                    if direction == "right":
+                        # Convert face points to float32 for transformation
+                        pts1 = np.float32(cube_2d[face1])
+
+                        arr = cube_3d[face1].copy()
+                        # Step 1: Remove the first column (x) and keep only the second and third columns
+                        arr = arr[:, 1:]  # This slices the array from the second column onwards (index 1)
+                        # Step 2: Swap the second and third columns (y and z)
+                        arr[:, [0, 1]] = arr[:, [1, 0]]
+
+                        pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                        # Compute Inverse Perspective Mapping (IPM) matrix
+                        ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                    
+                        # Compute distances
+                        dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                        dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                        
+                        print(f"2D distance: {dist_2d}")
+                        print(f"3D distance: {dist_3d}")
+
+                        nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                    
+                        # Compute neighbor's 3D distance using ratio
+                        nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                    
+                        # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                        right_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [z, y]
+                        
+                        # Swap columns to reorder from [z, y] → [y, z]
+                        right_3d = right_3d[:, [1, 0]]
+                        
+                        # Extend to [x, y, z] by adding the correct x-coordinate
+                        right_3d = np.column_stack((np.full(right_3d.shape[0], np.array(cube_3d[face1])[0, 0]), right_3d))
+                        # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                        left_3d = right_3d.copy()  # Copy left_3d structure
+                        left_3d[:, 0] -= nb_dist_3d  # Add nb_dist_3d to x-coordinates
+                        
+                        nb_upper_3d = np.array([left_3d[1], right_3d[1], right_3d[2], left_3d[2]])
+                        nb_lower_3d = np.array([left_3d[0], right_3d[0], right_3d[3], left_3d[3]])
+                        
+                        
+                        # print("Right face :", cube_3d[face1])
+                        # print("NB Left face: ", left_3d)
+
+                    elif direction == "bottom":
+                        # Convert face points to float32 for transformation
+                        pts1 = np.float32(cube_2d[face1])
+
+                        arr = cube_3d[face1].copy()
+                        # Step 1: Remove the first column (x) and keep only the second and third columns
+                        arr = arr[:, :2]
+
+                        pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                        # Compute Inverse Perspective Mapping (IPM) matrix
+                        ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                    
+                        # Compute distances
+                        dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                        dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                        
+                        print(f"2D distance: {dist_2d}")
+                        print(f"3D distance: {dist_3d}")
+
+                        nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                    
+                        # Compute neighbor's 3D distance using ratio
+                        nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                    
+                        # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                        bottom_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [x, y]
+                        
+                        # Extend to [x, y, z] by adding the correct x-coordinate
+                        nb_lower_3d = np.column_stack(( bottom_3d, np.full(bottom_3d.shape[0], np.array(cube_3d[face1])[0, 2])))
+                        # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                        nb_upper_3d = nb_lower_3d.copy()  # Copy left_3d structure
+                        nb_upper_3d[:, 2] += nb_dist_3d  # Add nb_dist_3d to z-coordinates
+                        
+                    elif direction == "top":
+                        # Convert face points to float32 for transformation
+                        pts1 = np.float32(cube_2d[face1])
+
+                        arr = cube_3d[face1].copy()
+                        # Step 1: Remove the first column (x) and keep only the second and third columns
+                        arr = arr[:, :2]
+
+                        pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                        # Compute Inverse Perspective Mapping (IPM) matrix
+                        ipm = cv2.getPerspectiveTransform(pts1, pts2)
+                    
+                        # Compute distances
+                        dist_2d = dist(cube_2d[face1], cube_2d[face2])
+                        dist_3d = dist(cube_3d[face1], cube_3d[face2])
+                        
+                        print(f"2D distance: {dist_2d}")
+                        print(f"3D distance: {dist_3d}")
+
+                        nb_dist_2d = dist(nb_cube_2d[face1], nb_cube_2d[face2])
+                    
+                        # Compute neighbor's 3D distance using ratio
+                        nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+                    
+                        # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                        top_3d = map_points_to_BEV(nb_cube_2d[face2], ipm)  # Output is [x, y]
+                        
+                        # Extend to [x, y, z] by adding the correct x-coordinate
+                        nb_upper_3d = np.column_stack(( top_3d, np.full(top_3d.shape[0], np.array(cube_3d[face1])[0, 2])))
+                        # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                        nb_lower_3d = nb_upper_3d.copy()  # Copy left_3d structure
+                        nb_lower_3d[:, 2] -= nb_dist_3d  # Add nb_dist_3d to z-coordinates
+
+                    else: continue
+
+                    score = compute_validity_score(nb_lower_3d, nb_upper_3d, xmax, ymax, zmax)
+                    if score < 0.8: continue
+                    print(f"score: {score}")
+
+                    if nb_label not in processed_labels:
+                        processed_labels[nb_label] = {'iou': iou, "score": score, 'level': level, 'lower_face': nb_lower, 'upper_face': nb_upper,'lower_face_3d': nb_lower_3d, 'upper_face_3d': nb_upper_3d}
+                        process_segment(xmax, ymax, zmax, (nb_lower, nb_upper), (nb_lower_3d, nb_upper_3d), marked_image, nb_label, ext_labels, nbs_dict, processed_labels, bottoms, heights, colors, level+1, mark)
+                    else: #if iou + score > processed_labels[nb_label]['iou'] + processed_labels[nb_label]['score']:
+                        processed_labels[nb_label].update({
+                            'iou': iou,
+                            "score": score,
+                            'level': level,
+                            'lower_face': nb_lower,
+                            'upper_face': nb_upper,
+                            'lower_face_3d': nb_lower_3d,
+                            'upper_face_3d': nb_upper_3d
+                        })
+                        process_segment(xmax, ymax, zmax, (nb_lower, nb_upper), (nb_lower_3d, nb_upper_3d), marked_image, nb_label, ext_labels, nbs_dict, processed_labels, bottoms, heights, colors, level+1, mark)
+
+        # if nb_label in processed_labels and processed_labels[nb_label]['lower_face_3d'] is not None and processed_labels[nb_label]['upper_face_3d'] is not None:
+            
+            # bottoms.append(processed_labels[nb_label]['lower_face_3d'])
+            # height = (processed_labels[nb_label]['upper_face_3d'] - processed_labels[nb_label]['lower_face_3d'])[0, 2]
+            # heights.append(height)
+            
+            # cv2_color = list(cv_colors)[(level + 1) % (len(cv_colors) - 1)].value
+            # plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+            # colors.append(plt_color)
+            
+            # draw_cube(
+                # marked_image,
+                # processed_labels[nb_label]['lower_face'].astype("int"),
+                # processed_labels[nb_label]['upper_face'].astype("int"),
+                # color=cv2_color,
+                # thickness=4
+            # )
+
+def compute_average_processed_labels(processed_labels_list):
+    averaged_processed_labels = [{} for _ in range(len(processed_labels_list))]  # Same structure
+
+    label_data = {}
+
+    # Collect values from all segments
+    for segment_labels in processed_labels_list:
+        for label, data in segment_labels.items():
+            if label not in label_data:
+                label_data[label] = {
+                    'iou': [],
+                    'score': [],
+                    'lower_faces': [],
+                    'upper_faces': [],
+                    'lower_faces_3d': [],
+                    'upper_faces_3d': []
+                }
+            
+            label_data[label]['iou'].append(data['iou'])
+            label_data[label]['score'].append(data['score'])
+
+            if data['lower_face'] is not None:
+                label_data[label]['lower_faces'].append(data['lower_face'])
+            if data['upper_face'] is not None:
+                label_data[label]['upper_faces'].append(data['upper_face'])
+
+            if data['lower_face_3d'] is not None:
+                label_data[label]['lower_faces_3d'].append(data['lower_face_3d'])
+            if data['upper_face_3d'] is not None:
+                label_data[label]['upper_faces_3d'].append(data['upper_face_3d'])
+
+    # Compute averages and populate new dictionary
+    for segment_index in range(len(processed_labels_list)):
+        for label, values in label_data.items():
+            avg_iou = np.mean(values['iou'])
+            avg_score = np.mean(values['score'])
+
+            # Compute 2D average if available
+            avg_lower_face = np.mean(values['lower_faces'], axis=0) if values['lower_faces'] else None
+            avg_upper_face = np.mean(values['upper_faces'], axis=0) if values['upper_faces'] else None
+
+            # Compute 3D averages (skip if empty)
+            avg_lower_face_3d = np.mean(values['lower_faces_3d'], axis=0) if values['lower_faces_3d'] else None
+            avg_upper_face_3d = np.mean(values['upper_faces_3d'], axis=0) if values['upper_faces_3d'] else None
+
+            # Compute height if possible
+            height = (avg_upper_face_3d[0, 2] - avg_lower_face_3d[0, 2]) if avg_lower_face_3d is not None and avg_upper_face_3d is not None else None
+
+            averaged_processed_labels[segment_index][label] = {
+                'iou': avg_iou,
+                'score': avg_score,
+                'lower_face': avg_lower_face,  # Now correctly computed
+                'upper_face': avg_upper_face,  # Now correctly computed
+                'lower_face_3d': avg_lower_face_3d,
+                'upper_face_3d': np.array(avg_lower_face_3d) + np.array([0, 0, height]) if height is not None else None
+            }
+
+    return averaged_processed_labels
+
+
 def process_images(reference_image_path, folder_path, output_path, method="otsu", 
                    threshold_value=50, region_size=40, ruler=30, slic_iterations=10):
     # Create the output directory if it doesn't exist
@@ -1706,6 +1933,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         marked_image = box_image.copy()
         lower_face, upper_face, extrem = get_projected_box(full_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
 
+        
+        # faces = get_projected_cube_faces(lower_face, upper_face)
+        # #draw_projected_cube(faces)
+        # result_image = draw_projected_cube_on_image(marked_image, faces)
+
+        # # Show the result
+        # cv2.imshow("Projected Cube", result_image)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
         down = extrem[0] # RED d
         top = extrem[1] # GREEN u
         left = extrem[5] # MINT r
@@ -1718,9 +1955,16 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
         count = 0
         
         reflect = False#True
-        mark = False
+        mark = True#False
+        
+        neighbors_dict = find_neighbors(labels)
+        
+        # processed_labels = {} #([segment_label])
+        
+        # num_segments = total_segments  # Define the number of segments
+        processed_labels_list = [{} for _ in range(len(extrem))]  # List of dictionaries
 
-        while np.any(full_mask):# and count < 2:
+        while np.any(full_mask) and count < 1:
             count += 1
             print(f"iteration: {count}")
 
@@ -1763,46 +2007,28 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 top_inv_ipm_left = cv2.getPerspectiveTransform(pts1, pts3)
                 top_ipm_left = cv2.getPerspectiveTransform(pts3, pts2)
 
-                # Draw 3D cube
-                # draw_cube(
-                    # marked_image,
-                    # lower_face.astype("int"),
-                    # upper_face.astype("int"),
-                    # color=cv_colors.BLACK.value,
-                    # thickness=7
-                # )
-                ## Draw circles on the lower face points
-                # for i, point in enumerate(extrem):
-                    # # Define the color for the circle
-                    # color=list(cv_colors)[(i + count) % (len(cv_colors)-1)].value
+                #main cube
+                bottom = np.array([[0, 0, 0], [g_xmax, 0, 0], [g_xmax, g_ymax, 0], [0, g_ymax, 0]])
+                top = np.array([[0, 0, g_zmax], [g_xmax, 0, g_zmax], [g_xmax, g_ymax, g_zmax], [0, g_ymax, g_zmax]])
+                cube_2d = get_projected_cube_faces(lower_face, upper_face)  # Get all 6 faces of the cube
+                cube_3d = get_projected_cube_faces(bottom, top)
             
-                    # # Draw the circle
-                    # cv2.circle(
-                        # marked_image,
-                        # center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                        # radius=15,  # Circle radius
-                        # color=color,
-                        # thickness=-1  # Filled circle
-                    # )
-    
-                # avg_bottom_3d = [
-                    # [x, y, zmin] for x, y in [ (xmin, ymin), (xmin + object_length, ymin), (xmin + object_length, ymin + object_width), (xmin, ymin + object_width)]
-                # ]
-    
-                # avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                # bottoms.append(np.array(avg_bottom_3d))
-                # pr_boxes.append((lower_face, upper_face))
-                # heights.append(object_height)
-                # cv2_color = cv_colors.GRAY.value
-                # plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                # colors.append(plt_color)
-    
-    
-    
+                # Process neighboring segments recursively
+                #nbs = nbs_dict.get(segment_label, {})
+                
+                # Select relevant faces based on direction
+                face_pairs = {
+                    "left": ("right", "left"),   # Check right of current vs left of nb
+                    "right": ("left", "right"),  # Check left of current vs right of nb
+                    "top": ("lower", "upper"),  # Check back of current vs front of nb
+                    "bottom": ("upper", "lower"),   # Check front of current vs back of nb
+                }
+                
+                
                 segment_index = 1
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                if mark: marked_image[mask] = list(cv_colors)[(segment_index) % (len(cv_colors)-1)].value
     
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
@@ -1812,7 +2038,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
     
                 # top_2d = map_points_to_BEV([top], top_ipm_matrix)[0]
                 # top_3d = [top_2d[0], top_2d[1], object_height]
-                #ext_3d.append(top_3d)
+                ##ext_3d.append(top_3d)
     
                 pr_upper_face = map_points_to_BEV(upper_face, top_ipm_matrix)
                 height = calc_height(lower_face, upper_face, pr_upper_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height)
@@ -1830,17 +2056,6 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_upper_face]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1852,13 +2067,20 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
                         thickness=4
                     )
+                    
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
     
-    
+
                 segment_index = 0
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                ext_labels[ext_labels == segment_label] = 0
+                if mark: marked_image[mask] = list(cv_colors)[(segment_index) % (len(cv_colors)-1)].value
+                #ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255  
                 # Extract the lower and upper faces for the segment
                 lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
@@ -1872,28 +2094,17 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 
                 # down_2d = map_points_to_BEV([down], ipm_matrix)[0]
                 # down_3d = [down_2d[0], down_2d[1], z]
-                #ext_3d.append(down_3d)
+                ##ext_3d.append(down_3d)
                 
                 avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
     
-                cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                cv2_color = list(cv_colors)[(0) % (len(cv_colors)-1)].value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_lower_face]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1905,11 +2116,19 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
                         thickness=4
                     )
+
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
     
+
                 segment_index = 4
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                marked_image[mask] = list(cv_colors)[segment_index].value
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
                 # Extract the lower and upper faces for the segment
@@ -1918,34 +2137,23 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
     
                 pr_lower_face = map_points_to_BEV(lower_face, ipm_matrix)
                 height = calc_height(lower_face, upper_face, pr_lower_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height)
-                z = zmin
+                z = 0
     
                 avg_bottom_3d = [[x, y, z] for x, y in pr_lower_face]
                 
                 left_2d = map_points_to_BEV([left], ipm_matrix)[0]
                 left_3d = [left_2d[0], left_2d[1], z]
-                #ext_3d.append(left_3d)
+                ##ext_3d.append(left_3d)
                 
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
     
-                cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                cv2_color = cv_colors.ORANGE.value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[x, g_object_width - y, z] for x, y in pr_lower_face]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -1954,14 +2162,25 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         marked_image,
                         lower_face.astype("int"),
                         upper_face.astype("int"),
-                        color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
+                        color=cv_colors.ORANGE.value,
                         thickness=4
                     )
+                    
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+                # Start processing from segment_label
+                #processed_labels = {} #([segment_label])
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
+    
+
+  
     
                 segment_index = 2
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                marked_image[mask] = list(cv_colors)[segment_index].value
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
                 # Extract the lower and upper faces for the segment
@@ -1981,33 +2200,21 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 z = pr_left_face[0][1]
                 length = calc_height(left_face, right_face, pr_left_face, inv_ipm_left, top_inv_ipm_left, object_length)
     
-                avg_bottom_3d = [[xmin, ymin + object_width - width, z], [xmin + length, ymin + object_width - width, z], [xmin + length, ymin + object_width, z], [xmin, ymin + object_width, z]]
+                avg_bottom_3d = [[0, object_width - width, z], [length, object_width - width, z], [length, object_width, z], [0, object_width, z]]
                 #[[x, y, z] for x, y in pr_left_face]
                 
                 left_2d = map_points_to_BEV([left_v], ipm_left)[0]
                 left_3d = [left_2d[0], left_2d[1], z + height/2]
                 #ext_3d.append(left_3d)
-                # Clipping
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
     
-                cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                cv2_color = cv_colors.BROWN.value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[xmin, g_object_width - ymin - object_width + width, z], [xmin + length, g_object_width - ymin - object_width + width, z], [xmin + length, g_object_width - ymin - object_width, z], [xmin, g_object_width - ymin - object_width, z]]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -2016,10 +2223,18 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         marked_image,
                         lower_face.astype("int"),
                         upper_face.astype("int"),
-                        color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
+                        color=cv_colors.BROWN.value,
                         thickness=4
                     )
                     
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
+    
+
                 # Find the segment for right vertical point
                 # segment_label = find_segment_for_point(labels, contour_mask, right_v)
                 # print(f"Segment label: {segment_label}")
@@ -2029,7 +2244,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 segment_index = 3
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                marked_image[mask] = list(cv_colors)[segment_index].value
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
                 # Extract the lower and upper faces for the segment
@@ -2048,31 +2263,20 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 z = pr_right_face[0][1]
                 length = calc_height(left_face, right_face, pr_right_face, inv_ipm_left, top_inv_ipm_left, object_length)
     
-                avg_bottom_3d = [[xmin + object_length - length, ymin, z], [xmin + object_length, ymin, z], [xmin + object_length, ymin + width, z], [xmin + object_length - length, ymin + width, z]]
+                avg_bottom_3d = [[object_length - length, 0, z], [object_length, 0, z], [object_length, width, z], [object_length - length, width, z]]
                 
                 right_2d = map_points_to_BEV([right_v], top_ipm_left)[0]
                 right_3d = [right_2d[0], right_2d[1], z + height/2]
                 #ext_3d.append(right_3d)
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
+                
                 bottoms.append(np.array(avg_bottom_3d))
                 pr_boxes.append((lower_face, upper_face))
                 heights.append(height)
     
-                cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                cv2_color = cv_colors.TEAL.value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[xmin + object_length - length, g_object_width - ymin, z], [xmin + object_length, g_object_width - ymin, z], [xmin + object_length, g_object_width - ymin - width, z], [xmin + object_length - length, g_object_width - ymin - width, z]]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -2081,57 +2285,79 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         marked_image,
                         lower_face.astype("int"),
                         upper_face.astype("int"),
-                        color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
+                        color=cv_colors.TEAL.value,
                         thickness=4
                     )
+                    
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+                # Start processing from segment_label
+                #processed_labels = {} #([segment_label])
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
     
+                ###################################
                 segment_index = 5 # right_up
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                if mark: marked_image[mask] = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                marked_image[mask] = list(cv_colors)[segment_index].value
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
                 # Extract the lower and upper faces for the segment
                 lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
                 if lower_face is None or upper_face is None: continue
                 
-                left_face = np.float32([lower_face[0], upper_face[0], upper_face[3], lower_face[3]])
-                right_face = np.float32([lower_face[1], upper_face[1], upper_face[2], lower_face[2]])
-                #pts2 = np.float32([(0, 0), (0, object_height), (object_width, object_height), (object_width, 0)])
-    
-                pr_right_face = map_points_to_BEV(right_face, top_ipm_left)
-                print(f"Projected right face: {pr_right_face}")
-    
-                width = (pr_right_face[-1] - pr_right_face[0])[0]
-                height = (pr_right_face[1] - pr_right_face[0])[1]
-                z = pr_right_face[0][1]
-                length = calc_height(left_face, right_face, pr_right_face, inv_ipm_left, top_inv_ipm_left, object_length)
-    
-                avg_bottom_3d = [[xmin + object_length - length, ymin + object_width - width, z], [xmin + object_length, ymin + object_width - width, z], [xmin + object_length, ymin + object_width, z], [xmin + object_length - length, ymin + object_width, z]]
+                nb_cube_2d = get_projected_cube_faces(lower_face, upper_face)
+                # Convert face points to float32 for transformation
+                pts1 = np.float32(cube_2d["right"])
+                arr = cube_3d["right"].copy()
+                # Step 1: Remove the first column (x) and keep only the second and third columns
+                arr = arr[:, 1:]  # This slices the array from the second column onwards (index 1)
+                # Step 2: Swap the second and third columns (y and z)
+                arr[:, [0, 1]] = arr[:, [1, 0]]
+
+                pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+                # Compute Inverse Perspective Mapping (IPM) matrix
+                ipm = cv2.getPerspectiveTransform(pts1, pts2)
+            
+                # Compute distances
+                dist_2d = dist(cube_2d["left"], cube_2d["right"])
+                dist_3d = dist(cube_3d["left"], cube_3d["right"])
                 
-                right_2d = map_points_to_BEV([right_v], top_ipm_left)[0]
-                right_3d = [right_2d[0], right_2d[1], z + height/2]
-                #ext_3d.append(right_3d)
-                avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                bottoms.append(np.array(avg_bottom_3d))
+                print(f"2D distance: {dist_2d}")
+                print(f"3D distance: {dist_3d}")
+
+                nb_dist_2d = dist(nb_cube_2d["left"], nb_cube_2d["right"])
+            
+                # Compute neighbor's 3D distance using ratio
+                nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+                # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+                right_3d = map_points_to_BEV(nb_cube_2d["right"], ipm)  # Output is [z, y]
+                
+                # Swap columns to reorder from [z, y] → [y, z]
+                right_3d = right_3d[:, [1, 0]]
+                
+                # Extend to [x, y, z] by adding the correct x-coordinate
+                right_3d = np.column_stack((np.full(right_3d.shape[0], np.array(cube_3d["right"])[0, 0]), right_3d))
+                # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+                left_3d = right_3d.copy()  # Copy left_3d structure
+                left_3d[:, 0] -= nb_dist_3d  # Add nb_dist_3d to x-coordinates
+                
+                nb_upper_3d = np.array([left_3d[1], right_3d[1], right_3d[2], left_3d[2]])
+                nb_lower_3d = np.array([left_3d[0], right_3d[0], right_3d[3], left_3d[3]])
+                        
+                
+                bottoms.append(nb_lower_3d)
                 pr_boxes.append((lower_face, upper_face))
-                heights.append(height)
+                heights.append(nb_dist_3d)
     
-                cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
+                cv2_color = cv_colors.TEAL.value
                 plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
                 colors.append(plt_color)
                 
-                if reflect:
-                    avg_bottom_3d = [[xmin + object_length - length, g_object_width - ymin - object_width + width, z], [xmin + object_length, g_object_width - ymin - object_width + width, z], [xmin + object_length, g_object_width - ymin - object_width, z], [xmin + object_length - length, g_object_width - ymin - object_width, z]]
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [g_xmax, g_ymax, g_zmax])
-                    avg_bottom_3d = np.clip(avg_bottom_3d, [0, 0, 0], [xmax, ymax, zmax])
-                    bottoms.append(np.array(avg_bottom_3d))
-                    pr_boxes.append((lower_face, upper_face))
-                    heights.append(height)
-        
-                    cv2_color = list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value
-                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
-                    colors.append(plt_color)
                     
                 # Validate computed faces
                 if lower_face is not None and upper_face is not None:
@@ -2140,82 +2366,97 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                         marked_image,
                         lower_face.astype("int"),
                         upper_face.astype("int"),
-                        color=list(cv_colors)[(segment_index + count) % (len(cv_colors)-1)].value,
+                        color=cv_colors.TEAL.value,
                         thickness=4
                     )
+
+                f_2d = (lower_face, upper_face)
+                f_3d = (np.array(avg_bottom_3d), np.array(avg_bottom_3d) + np.array([0, 0, height]))
+
+                for i in range(len(extrem)):
+                    processed_labels_list[i][segment_label] = {'iou': 1.0, 'score': 1.0, 'level': 0, 'lower_face': lower_face, 'upper_face': upper_face, 'lower_face_3d': np.array(avg_bottom_3d), 'upper_face_3d': np.array(avg_bottom_3d) + np.array([0, 0, height])}  # Initialize storage
+                process_segment(g_xmax, g_ymax, g_zmax, f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels_list[segment_index], bottoms, heights, colors, mark)
     
-            # second iteration
-            full_mask = (labels > 0)
-            
-            lower_face, upper_face, extrem = get_projected_box(full_mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
-            if lower_face is None or upper_face is None: break
-    
-            down = extrem[0] # RED d
-            top = extrem[1] # GREEN u
-            left = extrem[5] # MINT r
-            left_v = extrem[2] # BLUE l
-            right_v = extrem[3] # ORANGE r
-            right_u = extrem[4] # PURPLE l
-    
-    
-            extrem = [down, top, left_v, right_v, left, right_u]
-            
-            # Draw circles on the lower face points
-            for i, point in enumerate(extrem):
-                # Define the color for the circle
-                color=cv_colors.RED.value #list(cv_colors)[i + 10 % len(cv_colors)].value
+        #averaged_processed_labels = compute_average_processed_labels(processed_labels_list)
+
+        bottoms = []
+        heights = []
+        colors = []
         
-                # Draw the circle
-                cv2.circle(
-                    box_image,
-                    center=(int(point[0]), int(point[1])),  # Convert to integer coordinates
-                    radius=15,  # Circle radius
-                    color=color,
-                    thickness=-1  # Filled circle
-                )
-    
-            closest_points_3d, closest_points_2d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights, [0, 6])
-    
-            # down_3d = closest_points_3d[0]
-            # top_3d = closest_points_3d[1]
-            # left_3d = closest_points_3d[5]
-            # left_v_3d = closest_points_3d[2]
-            # right_v_3d = closest_points_3d[3]
-            # right_u_3d = closest_points_3d[4]
-    
-            zmin = min(x[2] for x in closest_points_3d)
-            zmax = max(x[2] for x in closest_points_3d)
-            ymin = min(x[1] for x in closest_points_3d)
-            ymax = max(x[1] for x in closest_points_3d)
-            xmin = min(x[0] for x in closest_points_3d)
-            xmax = max(x[0] for x in closest_points_3d)
+        # Dictionary to store lists of 3D lower/upper faces for averaging
+        segment_3d_data = {}
+        
+        for e in range(len(extrem)):
+            for segment_index in (processed_labels_list[e]):  # Iterate over segment indices
+                lower_face = processed_labels_list[e][segment_index]['lower_face']
+                upper_face = processed_labels_list[e][segment_index]['upper_face']
+                lower_face_3d = processed_labels_list[e][segment_index]['lower_face_3d']
+                upper_face_3d = processed_labels_list[e][segment_index]['upper_face_3d']
+                
+                if lower_face_3d is not None and upper_face_3d is not None:
+                    bottoms.append(lower_face_3d)
 
-            # xmin = max(xmin, g_xmin)
-            # xmax = min(xmax, g_xmax)
-            # ymin = max(ymin, g_ymin)
-            # ymax = min(ymax, g_ymax)
-            # zmin = max(zmin, g_zmin)
-            # zmax = min(zmax, g_zmax)
-
-            if False and len(bottoms) > 0:# and frame_count == 80:
-                #closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
-                draw_cubes_in_3d(bottoms, heights, colors, closest_points_3d)
-
-        # # Display the result
-        # cv2.imshow('Marked Segment', resize_to_height(marked_image, 700))
-        # # cv2.waitKey(0)
-        # # cv2.destroyAllWindows()
-    
-        # # Optionally, save the result
-        # cv2.imwrite('marked_segment.jpg', marked_image)
-        # #exit(0)
-
+                if lower_face_3d is not None and upper_face_3d is not None:
+                    if segment_index not in segment_3d_data:
+                        segment_3d_data[segment_index] = {'lower_faces_3d': [], 'upper_faces_3d': []}
                     
+                    segment_3d_data[segment_index]['lower_faces_3d'].append(lower_face_3d)
+                    segment_3d_data[segment_index]['upper_faces_3d'].append(upper_face_3d)
+                    
+                    # Compute height using the Z-coordinates
+                    height = (upper_face_3d - lower_face_3d)[0, 2]
+                    heights.append(height)
+                    cv2_color = list(cv_colors)[e % (len(cv_colors)-1)].value
+                    plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+                    colors.append(plt_color)
+                    
+                    draw_cube(
+                    marked_image,
+                    lower_face.astype("int"),
+                    upper_face.astype("int"),
+                    color=cv2_color,
+                    thickness=4
+                )
+            
+
+        draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors)
+        
+        reflect = True
+        bottoms = []
+        heights = []
+        colors = []
+        # Compute the average for each segment index
+        for segment_index, data in segment_3d_data.items():
+            avg_lower_face_3d = np.mean(data['lower_faces_3d'], axis=0)
+            avg_upper_face_3d = np.mean(data['upper_faces_3d'], axis=0)
+        
+            # Compute height using Z-coordinates
+            height = (avg_upper_face_3d - avg_lower_face_3d)[0, 2]
+        
+            # Append computed values
+            bottoms.append(avg_lower_face_3d)
+            heights.append(height)
+            
+            cv2_color = cv_colors.BLUE.value
+            plt_color = [c / 255.0 for c in cv2_color[::-1]]  # Normalize for plt
+            colors.append(plt_color)
+            
+            
+            if reflect:
+                # Reflect the lower face and add the reflected data
+                reflected_bottom = reflect_segment(np.array(avg_lower_face_3d), g_object_width)
+                bottoms.append(reflected_bottom)
+                heights.append(height)  # Symmetric object, height remains the same
+                colors.append(plt_color)  # Use the same color for symmetry
+            
+        draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors)
+        
+        # process_segment(f_2d, f_3d, marked_image, segment_label, ext_labels, neighbors_dict, processed_labels, bottoms, heights, colors, mark)
 
         # Draw SLIC contours on the original image
         slic_contour_mask = slic.getLabelContourMask(thick_line=False)
         segmented_output = current_image.copy()
-        segmented_output[slic_contour_mask > 0] = 255  # Mark contours in white
+        marked_image[slic_contour_mask > 0] = 255  # Mark contours in white
 
         # Save the output images
         cv2.imwrite(os.path.join(output_path, f"abs_diff_{filename}"), abs_diff)
@@ -2230,7 +2471,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             #closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
             #draw_cubes_in_3d(bottoms, heights, colors, closest_points_3d)
             #draw_3d_points_with_hull(#ext_3d)
-            draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors, closest_points_3d)
+            draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors) #, closest_points_3d)
 
 
 # Example usage

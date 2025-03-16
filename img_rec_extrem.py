@@ -2001,7 +2001,7 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
                 segment_index = 2
                 segment_label = find_segment_for_point(labels, contour_mask, extrem[segment_index])
                 mask = (ext_labels == segment_label)  # Get all pixels belonging to the segment
-                marked_image[mask] = list(cv_colors)[segment_index].value
+                marked_image[mask] = list(cv_colors)[segment_index + count].value
                 ext_labels[ext_labels == segment_label] = 0
                 #mask = (ext_labels == segment_index).astype(np.uint8) * 255 
                 # Extract the lower and upper faces for the segment

@@ -1,5 +1,6 @@
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import numpy as np
 import cv2
 #import trimesh
@@ -58,11 +59,17 @@ def generate_random_color():
     # # Draw the 3D bounding box
     # ax.add_collection3d(Poly3DCollection(verts, facecolors=color, linewidths=1, edgecolors='r', alpha=.25))
 
-def draw_3d_bounding_box(ax, lower_face, h, color=None):
+def darken_color(color, factor=0.7):
+    rgb = mcolors.to_rgb(color)  # Convert to (R, G, B)
+    return tuple([max(0, c * factor) for c in rgb])  # Darken by factor
+
+def draw_3d_bounding_box(ax, lower_face, h, color="blue"):
     lower_face = np.array(lower_face)
 
     if color is None:
         _, color = generate_random_color()
+
+    edge_color = darken_color(color)  # Compute darker edge color
 
     # Convert to 3D by adding z=0 for the lower face if in 2D
     if lower_face.shape[1] == 2:
@@ -81,7 +88,7 @@ def draw_3d_bounding_box(ax, lower_face, h, color=None):
         [upper_face[0], upper_face[1], upper_face[2], upper_face[3]]
     ]
 
-    ax.add_collection3d(Poly3DCollection(verts, facecolors=color, linewidths=1, edgecolors=color, alpha=.25))
+    ax.add_collection3d(Poly3DCollection(verts, facecolors=color, linewidths=1, edgecolors=edge_color, alpha=.25))
 
 def set_equal_axes(ax):
     """Sets equal scaling for 3D axes to ensure a consistent aspect ratio."""
@@ -216,17 +223,12 @@ def draw_cubes_with_bounding_image(bounding_box_image, lower_faces, heights, col
 
         # Right: Display the 3D bounding boxes
         ax_3d.cla()  # Clear the 3D plot
+        #colors = [(128, 128, 128) if c is None else c for c in (colors or [])]
         for lower_face, height, color in zip(lower_faces, heights, colors):
-            if color is not None:
-                draw_3d_bounding_box(ax_3d, lower_face, height, color=color)
-                
-        # Draw closest 3D points (if provided)
-        if closest_points_3d:
-            #closest_points_3d = np.array(closest_points_3d)
-            for i, point in enumerate(closest_points_3d):
-                cv = list(cv_colors)[(i) % len(cv_colors)].value  # Ensure unique colors
-                color = [c / 255.0 for c in cv[::-1]]  # Normalize for plt
-                ax_3d.scatter(point[0], point[1], point[2], color=color, s=100, label=f"Closest Point {i}")
+            # if color is None:
+            #color = [c / 255.0 for c in cv_colors.BLUE.value[::-1]] 
+            draw_3d_bounding_box(ax_3d, lower_face, height, color = color) #, color=color)
+
 
         ax_3d.set_xlabel('X')
         ax_3d.set_ylabel('Y')

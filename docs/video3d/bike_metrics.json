@@ -1,0 +1,14 @@
+{
+ "held_out_iou_mean": 0.8125820424123865,
+ "held_out_iou_median": 0.8185553138374173,
+ "extent_m": [
+  2.019,
+  0.729,
+  1.48
+ ],
+ "camera_height_m": 1.316359308190246,
+ "frames": 1178,
+ "carved_with": 589,
+ "held_out": 148,
+ "seconds": 2116
+}

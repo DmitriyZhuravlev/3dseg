@@ -1,6 +1,6 @@
 {
  "reference_frame": 228,
- "thickness": 0.8,
+ "thickness": 1.0,
  "calibration": {
   "0.35": 0.76843009336843,
   "0.6": 0.7746666960261647,
@@ -11,13 +11,13 @@
  },
  "extent": [
   2.397,
-  0.659,
+  0.819,
   2.224
  ],
  "unit": "m",
- "held_out_iou": 0.7759513547644813,
+ "held_out_iou": 0.7877210447029012,
  "held_out_iou_flat_cutout": 0.7686305075445011,
  "n_calib": 14,
  "n_held": 14,
- "seconds": 557
+ "seconds": 553
 }

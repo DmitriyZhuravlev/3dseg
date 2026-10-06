@@ -174,3 +174,95 @@ cuboids for the viewer (`docs/real_lifting.png`, `docs/box_cuboids.json`, `docs/
   not form a recognisable box or pig shape. The lifting maths (`lifting.py`,
   `cube.py`, `process_segment` in `surf.py`) is where the work is needed;
   the viewer shows what the pipeline produces faithfully.
+
+## 6. Refined lifting (`lift3d.py`), verified in 3D
+
+**Why the original output did not match the objects.** `surf.py`/`cube.py`
+fit a box to the silhouette in 2D only, then map it through a homography onto
+*hard-coded* object dimensions. The flag `pig = True` gives 21×7×7 and is
+used for the box photo too. The cuboid coordinates therefore have no metric
+relation to the object.
+
+**Method.** All in `lift3d.py`; the module docstring has details.
+
+1. **Calibrated camera from the three vanishing points.** The VP triangle's
+   orthocentre is at (1487, 844) and f = 4471 px; all three pairwise focal
+   estimates agree. The camera reproduces each VP exactly and looks down at
+   38°. The world frame has Z up and ground Z = 0. Units are camera heights,
+   so the model is metric up to one scale factor.
+2. **Mask.** Same background subtraction as `surf.py`, keeping the largest
+   component.
+3. **Bounding box.** A yawed 3D box on the ground, fitted so its projection
+   matches the silhouette.
+4. **Shape model**, chosen automatically by how well a single box explains the
+   silhouette (box-fit IoU ≥ 0.975):
+   - **box**: one solid cuboid. It is refined so that its visible 3D edges,
+     including interior ones the silhouette can't see (the near vertical edge
+     and the top-front edges), lie on image edges. This is a coarse-to-fine
+     truncated chamfer.
+   - **round**: a generalised cylinder along the box's long axis. In each
+     slice the visual hull is a wedge between the ground and the near and far
+     lines of sight. The round cross-section resting on the ground and
+     touching that wedge is unique: the wedge's incircle. Each cuboid spans its
+     disc (its bottom z is above 0 where the disc curves underneath). Radii are
+     median-smoothed, and slivers at the ends are dropped.
+   - **free**: carved columns with a reflection-symmetry prior (the earlier
+     approach; still available with `--shape free`).
+5. **Colours** come from the photo pixels on the object.
+
+**3D verification, not just the projection.** A silhouette says nothing about
+how deep an object goes, so reprojection IoU alone can't show 3D correctness.
+I checked the 3D shape in two independent ways:
+
+- **Real box against hand-traced 3D edges.** The six VP lines in `surf.py` are
+  traced box edges. Their intersections give six visible 3D corners, which
+  are independent of the mask. The traced top and bottom edges disagree by a
+  few percent (dented corner, bulging lid, manual tracing), and that
+  disagreement is reported as the uncertainty:
+
+  | | L | W | H |
+  |---|---|---|---|
+  | Ground truth (traced) | 0.348 ± 0.025 | 0.446 ± 0.012 | 0.282 ± 0.017 |
+  | Lifted model | 0.362 | 0.447 | 0.279 |
+
+  - Corner error is 2.4% of the box diagonal.
+  - **Volume IoU is 0.89.** The carved-column model without these priors
+    scored 0.65, and the original pipeline's dimensions were 21×7×7.
+
+- **Synthetic objects with known 3D shape** (`synthetic3d.py`). Each shape is
+  rendered through the same camera at the pig's position, lifted, and scored
+  by Monte-Carlo volume IoU:
+
+  | Shape | Model | Volume IoU | Silhouette IoU |
+  |---|---|---|---|
+  | Box 0.30×0.20×0.15, yaw 20° | box | **0.93** | 0.98 |
+  | Lying cylinder r = 0.06 | round | **0.85** | 0.94 |
+  | Pig (ellipsoid body, head, snout, ear, legs) | round | **0.66** | 0.91 |
+
+  Before the round model, the cylinder scored 0.38 and the pig 0.38–0.47, with
+  similar silhouette IoUs. That is the evidence that a matching projection
+  does not mean a matching shape.
+
+- **Real pig.** Reprojection IoU is 0.89 (precision 0.92, recall 0.97). The
+  model is a rounded body of the right length with a raised head end
+  (`docs/lift3d_results.png`). There is no 3D ground truth for the toy, so its
+  3D accuracy is bounded by the synthetic pig result.
+
+**Limits (single view).**
+
+- **Cross-section aspect is unobservable.** Width vs height of a rounded cross
+  section can't be determined from one silhouette. On the synthetic pig, the
+  true aspect (1.44) and the round default (1.0) both give silhouette IoU
+  0.925, while their volume IoU is 0.72 vs 0.66. `--aspect` sets this prior;
+  the default is 1 (round).
+- **Thin protrusions are not reconstructed.** Parts thinner than a slice, such
+  as the pig's ear, are missed. A "fin" heuristic added spikes in the wrong
+  places, so I removed it.
+- **The hidden back side** is a prior (box or round), never observed.
+
+**Tests.** `tests/test_lift3d.py` checks that:
+- the camera reproduces the VPs;
+- the box photo's dimensions fall within the traced uncertainty, with volume
+  IoU > 0.85;
+- the synthetic volume IoUs stay above 0.9 (box), 0.8 (cylinder) and
+  0.6 (pig).

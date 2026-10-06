@@ -27,6 +27,16 @@ python -m viewer3d --headless --out frame.png
 
 ![orbit](docs/demo_orbit.gif)
 
+## 2D photo → 3D cuboids
+
+`lift3d.py` lifts an object photo (taken against `reference.JPG`) into metric 3D
+cuboids. It uses a camera calibrated from the scene's vanishing points, a box
+model for boxes and round cross-sections for rounded objects. The result is
+checked in 3D, not just in projection: against the traced box edges, and
+against synthetic shapes with known geometry. See NOTES.md §6.
+
+![lifting](docs/lift3d_results.png)
+
 ## Requirements
 
 Python 3 with the packages in `requirements.txt`:

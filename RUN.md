@@ -58,7 +58,17 @@ pip install pytest
 python -m pytest tests          # GPU tests auto-skip if no EGL context can be created
 ```
 
-## Lift the repo photos to 3D
+## Lift the repo photos to 3D (metric, verified)
+
+```bash
+python lift3d.py box.JPG pig.JPG --out out/        # ~25 s; *_cuboids.json + *_reprojection.png
+python -m viewer3d --scene out/pig_cuboids.json --texture "" --no-showcase --no-surface
+python synthetic3d.py                              # 3D accuracy on shapes with known geometry
+```
+
+Options: `--shape auto|box|round|free`, `--aspect` (cross-section width/height prior), `--grid`.
+
+The original `surf.py` pipeline can still be run headlessly for comparison:
 
 ```bash
 python lift_to_viewer.py box.JPG pig.JPG --out out/   # ~2 min; writes *_cuboids.json + *_marked.png

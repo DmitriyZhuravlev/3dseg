@@ -351,3 +351,34 @@ The videos and the generated `.ply` meshes are not committed.
 - heading and lean signs;
 - inflation of a disc giving a sphere;
 - recovery of the weak-view rotation.
+
+## 8. Novelty and prior work (assessment)
+
+Each building block is established:
+- **Calibration:** vanishing-point camera calibration and single-view metrology
+  (Caprile & Torre 1990; Cipolla et al. 1999; Criminisi et al. 2000).
+- **Vehicle 3D boxes from vanishing points** in fixed traffic cameras (Dubská
+  et al. 2014; Sochor et al., BoxCars). This is the closest prior work to the
+  original `surf.py`/`cube.py` idea.
+- **Visual hull** (Laurentini 1994; Szeliski 1993).
+- **Shape from silhouette across time** for a moving rigid object (Cheung,
+  Baker & Kanade 2003).
+- **Silhouette inflation** (Teddy 1999; Monster Mash 2020).
+
+A possible narrow contribution, for a workshop paper or technical report:
+training-free metric shape of road users from one uncalibrated fixed camera.
+It would rest on:
+- self-calibration from painted ground lines and standard stall sizes;
+- kinematic priors for two-wheelers (lean from the turn) inside
+  silhouette-across-time carving;
+- robustness measures: shadow stripping, a carving consensus threshold and
+  chamfer pose refinement;
+- a frames-vs-accuracy study.
+
+Missing before writing:
+- ground truth (synthetic CAD scenes, or vehicles of known dimensions);
+- more videos;
+- baselines: VP-box, single view, carving without pose refinement, learned
+  methods (DUSt3R, TripoSR);
+- ablations;
+- a literature search confirming the lean-prior angle.

@@ -149,3 +149,28 @@ The environment was a Linux container with no GPU: Mesa llvmpipe, OpenGL 4.5,
 - **Bug found and fixed during verification.** Reading the window back buffer
   after `swap_buffers` returned garbage. Screenshots now render into their own
   FBO.
+
+## 5. Real 2D → 3D lifting on the repo photos
+
+`reference.JPG` (empty scene) and `box.JPG` / `pig.JPG` (3036×1760) match the
+vanishing-point lines hard-coded in `surf.py`, so they are the intended input.
+`lift_to_viewer.py` runs `surf.py`'s `process_images` headlessly on them and exports the
+cuboids for the viewer (`docs/real_lifting.png`, `docs/box_cuboids.json`, `docs/pig_cuboids.json`).
+
+- **`img_rec_ipm.py` is out of date.** It calls `graph.find_neighbors(labels)`,
+  but `find_neighbors` now also needs the contour mask, as `surf.py` passes it.
+  `surf.py` is the current pipeline.
+- **Fixed: `graph.find_neighbors` never finished on full-size photos.** It
+  looped over every contour pixel for every label pair. It is now vectorised,
+  and `tests/test_graph.py` checks the results are identical.
+- **Speed-up, in the script only.** `lift_to_viewer.py` memoises
+  `get_projected_box` because the recursive growth recomputes the same masks.
+  This takes `box.JPG` from >30 min to ~100 s and `pig.JPG` to ~30 s, with the
+  same output.
+- **Result: the lifting is only partial.** The object is segmented correctly,
+  but out of ~115 superpixels only **6 (box)** and **8 (pig)** cuboids come out.
+  About 350 "Error computing" messages show the 3D face is `None` for most
+  segments. The resulting cuboids are small blocks, all in one colour, and do
+  not form a recognisable box or pig shape. The lifting maths (`lifting.py`,
+  `cube.py`, `process_segment` in `surf.py`) is where the work is needed;
+  the viewer shows what the pipeline produces faithfully.

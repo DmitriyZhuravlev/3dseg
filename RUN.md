@@ -58,6 +58,13 @@ pip install pytest
 python -m pytest tests          # GPU tests auto-skip if no EGL context can be created
 ```
 
+## Lift the repo photos to 3D
+
+```bash
+python lift_to_viewer.py box.JPG pig.JPG --out out/   # ~2 min; writes *_cuboids.json + *_marked.png
+python -m viewer3d --scene out/box_cuboids.json --texture "" --no-showcase --no-surface
+```
+
 ## Interactive smoke test without a display
 
 ```bash

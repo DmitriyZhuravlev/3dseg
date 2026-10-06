@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Generated outputs
+output_frames/
+output_bev_frames/
+temp/
+output_with_cubes.mp4
+avg_frame.jpg
+*.bk

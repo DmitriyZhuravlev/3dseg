@@ -21,12 +21,12 @@ determined in 3D as soon as one of its faces lies on a known plane:
 Propagation is breadth-first; every segment is then re-estimated from all its
 solved neighbours and the results averaged (the original's averaging step).
 
-Status (work in progress): with the calibrated camera the whole-object tangent box
-is metric (box.JPG: 0.320 x 0.461 x 0.304 m vs traced 0.348 x 0.446 x 0.282 m), and
-every segment gets a box (104/104 on box.JPG, 27/27 on pig.JPG; reprojection IoU
-0.965 / 0.873). But the per-segment boxes drift from the true surfaces in 3D: a
-superpixel is a surface patch, while its box depth comes from its 2D extent, and
-the error accumulates along the propagation.
+Status: the box version (`reconstruct`) solves every segment but its boxes drift in
+3D (a superpixel is a surface patch, while its box depth comes from its 2D extent).
+`patch_reconstruct` fixes that: each segment is a planar patch, placed recursively
+(coplanar / fold through the shared edge, colour + vanishing-point edge evidence),
+then refined for connectivity, anchored on the edge-refined metric main box.
+`make3d_planes` is a Make3D-style global baseline. Results: NOTES.md section 9.
 
 Corner order of cube.compute_3d_box_from_plain_mask_new (verified on box.JPG):
     lower = [a front, b (a + Y), h (a + X + Y), c (a + X)],  upper = same + Z
@@ -357,3 +357,353 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ===========================================================================
+# Drift-free version: superpixels as planar surface patches
+# ===========================================================================
+# A superpixel is a piece of the object's surface, not a solid. Each one is given a
+# plane (axis-aligned with the vanishing-point directions, as the original boxes are),
+# and its 3D points are its pixels back-projected onto that plane, so no depth is
+# guessed from 2D extents. The recursion of the original method is kept: seeds at the
+# extreme points sit on faces of the metric main box; a neighbour of a solved segment is
+# either on the same plane (coplanar) or on a perpendicular plane through their shared
+# boundary (a fold); colour similarity across the boundary chooses between the two, and
+# the patch must stay inside the main box.
+
+def pair_boundaries(labels):
+    """{(i, j): (N, 2) array of (x, y) boundary pixel positions} for adjacent object segments i < j."""
+    out = {}
+    for dy, dx in ((0, 1), (1, 0)):
+        a = labels[: labels.shape[0] - dy, : labels.shape[1] - dx]
+        b = labels[dy:, dx:]
+        m = (a != b) & (a > 0) & (b > 0)
+        ys, xs = np.nonzero(m)
+        i, j = np.minimum(a[m], b[m]), np.maximum(a[m], b[m])
+        pts = np.c_[xs + dx / 2.0, ys + dy / 2.0]
+        for key in set(zip(i.tolist(), j.tolist())):
+            sel = (i == key[0]) & (j == key[1])
+            out.setdefault(key, []).append(pts[sel])
+    return {k: np.vstack(v) for k, v in out.items()}
+
+
+def backproject_plane(cam, uv, axis, value):
+    """Points where the rays through pixels `uv` meet the plane x[axis] = value (and the ray parameter)."""
+    d = cam.ray(uv)
+    t = (value - cam.C[axis]) / np.where(np.abs(d[:, axis]) < 1e-9, 1e-9, d[:, axis])
+    return cam.C + d * t[:, None], t
+
+
+def segment_pixels(labels, ids, step=4):
+    """Sub-sampled pixel coordinates of every segment (enough to place a planar patch)."""
+    ys, xs = np.nonzero(labels[::step, ::step])
+    lab = labels[::step, ::step][ys, xs]
+    pts = np.c_[xs * step, ys * step].astype(float)
+    return {i: pts[lab == i] for i in ids}
+
+
+def mean_colours(image, labels, ids):
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(float)
+    flat = labels.ravel()
+    return {i: lab[flat == i].mean(0) for i in ids}
+
+
+def _inside_frac(P, lo, hi, tol):
+    return float(np.mean(np.all((P >= lo - tol) & (P <= hi + tol), axis=1))) if len(P) else 0.0
+
+
+def orientation_votes(image, labels, vps, min_len=12, max_angle_deg=2.5):
+    """Per segment, total length of short image edges running towards each vanishing point.
+
+    Returns {segment: array([X, Y, Z])} (X: left VP, Y: right VP, Z: vertical VP). A planar
+    patch with normal along axis k can only contain edges along the other two axes, which
+    is the orientation-map cue of Lee, Hebert & Kanade (2009).
+    """
+    g = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    segs = cv2.createLineSegmentDetector().detect(g)[0]
+    out = {int(i): np.zeros(3) for i in np.unique(labels) if i > 0}
+    if segs is None:
+        return out
+    segs = segs.reshape(-1, 4)
+    L = np.hypot(segs[:, 2] - segs[:, 0], segs[:, 3] - segs[:, 1])
+    segs, L = segs[L >= min_len], L[L >= min_len]
+    mid = (segs[:, :2] + segs[:, 2:]) / 2
+    dirn = (segs[:, 2:] - segs[:, :2]) / L[:, None]
+    H, W = labels.shape
+    xi = np.clip(mid[:, 0].astype(int), 0, W - 1)
+    yi = np.clip(mid[:, 1].astype(int), 0, H - 1)
+    lab = labels[yi, xi]
+    cosmax = np.cos(np.radians(max_angle_deg))
+    for k, key in enumerate(("left", "right", "vertical")):
+        to_vp = np.asarray(vps[key])[None] - mid
+        to_vp /= np.linalg.norm(to_vp, axis=1, keepdims=True)
+        hit = np.abs(np.sum(to_vp * dirn, axis=1)) > cosmax
+        for i, l in zip(lab[hit], L[hit]):
+            if i > 0:
+                out[int(i)][k] += l
+    return out
+
+
+def orientation_score(votes, axis):
+    """In [-1, 1]: +1 when all edges lie in the plane with normal `axis`, -1 when all run along that normal."""
+    tot = votes.sum()
+    if tot <= 0:
+        return 0.0
+    return float((tot - 2 * votes[axis]) / tot)
+
+
+def patch_reconstruct(cam, image, mask, vps, labels, contour, region_seeds=None, colour_tau=12.0, passes=2,
+                      use_orientation=True, orient_weight=2.0, icm_iters=6, w_gap=1.0, w_orient=0.3, w_in=1.0,
+                      refine_main=True):
+    """Recursive planar-patch reconstruction (the original method without drift).
+
+    Returns {segment: (axis, value)} planes, the main box and diagnostics.
+    """
+    main, main_iou = lift3d.fit_bounding_box(cam, mask, fit_yaw=False)
+    if refine_main:
+        # the main box anchors every seed, so use lift3d's edge-refined fit (visible edges on image edges)
+        main = lift3d.refine_box_with_edges(cam, image, mask, main)
+        main[5] = 0.0                                       # keep it aligned with the vanishing-point axes
+    cx, cy, ln, wd, ht, _ = main
+    lo = np.array([cx - ln / 2, cy - wd / 2, 0.0])
+    hi = np.array([cx + ln / 2, cy + wd / 2, ht])
+    tol = 0.04 * (hi - lo)
+    ids = [int(v) for v in np.unique(labels) if v > 0]
+    pix = segment_pixels(labels, ids)
+    col = mean_colours(image, labels, ids)
+    votes = orientation_votes(image, labels, vps) if use_orientation else {i: np.zeros(3) for i in ids}
+    bnd = pair_boundaries(labels)
+    nbrs = {i: set() for i in ids}
+    for (i, j) in bnd:
+        nbrs[i].add(j)
+        nbrs[j].add(i)
+    # visible faces of the main box: those whose outward normal points towards the camera
+    visible = []
+    for axis in range(3):
+        for value, normal_sign in ((lo[axis], -1.0), (hi[axis], 1.0)):
+            centre = (lo + hi) / 2
+            centre[axis] = value
+            if normal_sign * (cam.C[axis] - value) > 0:
+                visible.append((axis, float(value)))
+
+    def score_plane(s, axis, value):
+        P, t = backproject_plane(cam, pix[s], axis, value)
+        if (t <= 0).any():
+            return -1.0
+        return _inside_frac(P, lo, hi, tol)
+
+    planes, how = {}, {}
+    seeds = region_seeds if region_seeds is not None else sorted({segment_at(labels, p) for p in extreme_points(mask, vps)} - {0})
+    def oriented(s, axis):
+        return max(0.05, 1.0 + orient_weight * orientation_score(votes[s], axis)) if use_orientation else 1.0
+
+    for s in seeds:
+        best = max(visible, key=lambda pl: score_plane(s, *pl) * oriented(s, pl[0]))
+        if score_plane(s, *best) > 0.5:
+            planes[s], how[s] = best, "seed"
+
+    def candidates(s, known):
+        out = []
+        for n in nbrs[s]:
+            if n not in known:
+                continue
+            axis, value = known[n]
+            key = (min(s, n), max(s, n))
+            bp, _ = backproject_plane(cam, bnd[key], axis, value)
+            similar = np.linalg.norm(col[s] - col[n]) < colour_tau
+            w = len(bnd[key])
+            out.append(((axis, value), w * (2.0 if similar else 1.0)))           # coplanar
+            for k in range(3):                                                   # folds through the shared edge
+                if k != axis:
+                    out.append(((k, float(np.median(bp[:, k]))), w * (1.0 if similar else 2.0)))
+        return out
+
+    def choose(s, known):
+        best, best_score = None, -1.0
+        votes = {}
+        for pl, w in candidates(s, known):
+            key = (pl[0], round(pl[1], 3))
+            votes.setdefault(key, [0.0, []])
+            votes[key][0] += w
+            votes[key][1].append(pl[1])
+        for (axis, _), (w, vals) in votes.items():
+            value = float(np.median(vals))
+            sc = score_plane(s, axis, value)
+            if sc <= 0.5:
+                continue
+            total = sc * w * oriented(s, axis)
+            if total > best_score:
+                best, best_score = (axis, value), total
+        return best
+
+    queue = deque(n for s in planes for n in nbrs[s])
+    while queue:
+        s = queue.popleft()
+        if s in planes:
+            continue
+        pl = choose(s, planes)
+        if pl is not None:
+            planes[s], how[s] = pl, "propagated"
+            queue.extend(n for n in nbrs[s] if n not in planes)
+    for _ in range(passes):
+        planes = {s: (planes[s] if how[s] == "seed" else (choose(s, planes) or planes[s])) for s in planes}
+
+    # Connectivity refinement (iterated conditional modes): every non-seed patch re-picks, among its
+    # candidate planes, the one whose boundaries meet the neighbours' patches with the smallest 3D gap
+    # (relative to depth), plus orientation evidence and staying inside the main box.
+    def gap(s, pl, n, pn):
+        key = (min(s, n), max(s, n))
+        pts = bnd[key][:: max(1, len(bnd[key]) // 15)]
+        A, ta = backproject_plane(cam, pts, *pl)
+        B, tb = backproject_plane(cam, pts, *pn)
+        if (ta <= 0).any() or (tb <= 0).any():
+            return 1.0
+        return float(np.median(np.linalg.norm(A - B, axis=1) / np.maximum(np.linalg.norm(A - cam.C, axis=1), 1e-9)))
+
+    def cost(s, pl):
+        inside = score_plane(s, *pl)
+        if inside <= 0.3:
+            return np.inf
+        g, wsum = 0.0, 0.0
+        for n in nbrs[s]:
+            if n in planes:
+                w = np.sqrt(len(bnd[(min(s, n), max(s, n))]))
+                g += w * min(gap(s, pl, n, planes[n]), 0.1)        # truncated: tolerate true depth edges
+                wsum += w
+        g = g / wsum if wsum else 0.0
+        o = (1 - orientation_score(votes[s], pl[0])) / 2 if use_orientation else 0.0
+        return w_gap * g / 0.01 + w_orient * o + w_in * (1 - inside)
+
+    for _ in range(icm_iters):
+        changed = 0
+        for s in sorted(planes):
+            if how[s] == "seed":
+                continue
+            cands = {planes[s]}
+            cands.update(pl for pl, _ in candidates(s, planes))
+            cands.update(visible)
+            best = min(cands, key=lambda pl: cost(s, pl))
+            if best != planes[s] and cost(s, best) < cost(s, planes[s]):
+                planes[s] = best
+                changed += 1
+        if not changed:
+            break
+    return dict(planes=planes, how=how, main=(lo, hi), main_iou=main_iou, seeds=seeds, ids=ids,
+                failed=[s for s in ids if s not in planes])
+
+
+def make3d_planes(cam, image, labels, anchors, colour_tau=12.0, w_conn=1.0, w_copl=0.5, w_anchor=10.0, reg=1e-4):
+    """Make3D-style global solve (Saxena et al. 2009) without the learned depth term.
+
+    Each superpixel i has plane parameters a_i (camera frame) with inverse depth
+    1/z = r . a_i along ray r = K^-1 [u, v, 1]. Least squares over all superpixels:
+        connectivity  sum over boundary pixels p of w_conn (r_p . a_i - r_p . a_j)^2
+        coplanarity   for colour-similar neighbours, at each other's centres
+        anchors       w_anchor (r_p . a_i - 1/z_p)^2 at given pixels (replacing the
+                      learned per-pixel depth: the same seeds as the recursive method)
+    Returns {segment: a (3,)}.
+    """
+    from scipy.sparse import lil_matrix
+    from scipy.sparse.linalg import lsqr
+    ids = [int(v) for v in np.unique(labels) if v > 0]
+    idx = {s: k for k, s in enumerate(ids)}
+    Kinv = np.linalg.inv(cam.K)
+    rays = lambda uv: np.c_[uv, np.ones(len(uv))] @ Kinv.T
+    bnd = pair_boundaries(labels)
+    col = mean_colours(image, labels, ids)
+    cen = {s: np.c_[np.nonzero(labels == s)[1].mean(), np.nonzero(labels == s)[0].mean()] for s in ids}
+    rows, rhs, entries = 0, [], []
+
+    def add(i, ri, j=None, rj=None, b=0.0, w=1.0):
+        nonlocal rows
+        entries.append((rows, i, ri * w))
+        if j is not None:
+            entries.append((rows, j, -rj * w))
+        rhs.append(b * w)
+        rows += 1
+
+    for (i, j), pts in bnd.items():
+        sub = pts[:: max(1, len(pts) // 20)]
+        for r in rays(sub):
+            add(idx[i], r, idx[j], r, w=w_conn / np.sqrt(len(sub)))
+        if np.linalg.norm(col[i] - col[j]) < colour_tau:
+            for s, other in ((i, j), (j, i)):
+                r = rays(cen[other])[0]
+                add(idx[s], r, idx[other], r, w=w_copl)
+    for s, (uv, z) in anchors.items():
+        sub = np.arange(len(uv))[:: max(1, len(uv) // 30)]
+        for r, zz in zip(rays(uv[sub]), z[sub]):
+            add(idx[s], r, b=1.0 / zz, w=w_anchor / np.sqrt(len(sub)))
+    for s in ids:                                                     # tiny ridge so every system is solvable
+        for k in range(3):
+            e = np.zeros(3)
+            e[k] = 1.0
+            add(idx[s], e, w=reg)
+    A = lil_matrix((rows, 3 * len(ids)))
+    for r, i, v in entries:
+        A[r, 3 * i: 3 * i + 3] = v
+    sol = lsqr(A.tocsr(), np.array(rhs), atol=1e-12, btol=1e-12, iter_lim=20000)[0]
+    return {s: sol[3 * idx[s]: 3 * idx[s] + 3] for s in ids}
+
+
+# ---------------------------------------------------------------------------
+# Depth maps for evaluation
+# ---------------------------------------------------------------------------
+def camera_depth(cam, P):
+    """Depth (camera z) of world points."""
+    return ((P - cam.C) @ cam.R.T)[:, 2]
+
+
+def depth_from_planes(cam, labels, planes, step=4):
+    """Per-pixel camera depth (sub-sampled grid) from world-axis planes {s: (axis, value)}."""
+    ys, xs = np.nonzero(labels[::step, ::step] > 0)
+    uv = np.c_[xs * step, ys * step].astype(float)
+    lab = labels[ys * step, xs * step]
+    z = np.full(len(uv), np.nan)
+    for s, (axis, value) in planes.items():
+        sel = lab == s
+        if sel.any():
+            P, t = backproject_plane(cam, uv[sel], axis, value)
+            z[sel] = np.where(t > 0, camera_depth(cam, P), np.nan)
+    return uv, z
+
+
+def depth_from_make3d(cam, labels, alphas, step=4):
+    ys, xs = np.nonzero(labels[::step, ::step] > 0)
+    uv = np.c_[xs * step, ys * step].astype(float)
+    lab = labels[ys * step, xs * step]
+    r = np.c_[uv, np.ones(len(uv))] @ np.linalg.inv(cam.K).T
+    inv = np.array([r[k] @ alphas[l] for k, l in enumerate(lab)])
+    return uv, np.where(inv > 1e-9, 1.0 / np.maximum(inv, 1e-9), np.nan)
+
+
+def depth_from_boxes(cam, uv, boxes):
+    """Nearest ray hit with a set of oriented boxes (each: 8 corners as from box_corners/lift3d)."""
+    d = cam.ray(uv)
+    best = np.full(len(uv), np.inf)
+    for corners in boxes:
+        o = corners[0]
+        axes = [corners[3] - o, corners[1] - o, corners[4] - o]         # a->c, a->b, a->a1
+        lens = [np.linalg.norm(a) for a in axes]
+        U = np.array([a / max(L, 1e-12) for a, L in zip(axes, lens)])
+        q = (cam.C - o) @ U.T
+        dd = d @ U.T
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t1 = (0 - q) / dd
+            t2 = (np.array(lens) - q) / dd
+        tmin = np.nanmax(np.minimum(t1, t2), axis=1)
+        tmax = np.nanmin(np.maximum(t1, t2), axis=1)
+        hit = (tmax >= tmin) & (tmax > 0)
+        best = np.where(hit & (tmin < best), tmin, best)
+    P = cam.C + d * best[:, None]
+    z = camera_depth(cam, P)
+    return np.where(np.isfinite(best), z, np.nan)
+
+
+def depth_errors(z, z_gt):
+    ok = np.isfinite(z) & np.isfinite(z_gt) & (z_gt > 0)
+    rel = np.abs(z[ok] - z_gt[ok]) / z_gt[ok]
+    cover = float(np.mean(np.isfinite(z[np.isfinite(z_gt)]))) if np.isfinite(z_gt).any() else 0.0
+    return dict(median_rel=float(np.median(rel)) if len(rel) else None, mean_rel=float(np.mean(rel)) if len(rel) else None,
+                within_1pct=float(np.mean(rel < 0.01)) if len(rel) else None,
+                within_3pct=float(np.mean(rel < 0.03)) if len(rel) else None, coverage=cover)

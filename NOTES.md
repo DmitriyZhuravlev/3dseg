@@ -382,3 +382,67 @@ Missing before writing:
   methods (DUSt3R, TripoSR);
 - ablations;
 - a literature search confirming the lean-prior angle.
+
+## 9. The original recursive segment method: drift fix and Make3D comparison
+
+`segment3d.py` keeps the structure of `surf.py`/`cube.py`:
+- a vanishing-point tangent box per superpixel;
+- seeds at the object's six extreme points;
+- recursive propagation between neighbouring superpixels.
+
+The geometry is replaced with the calibrated camera from `lift3d.py`.
+
+**Findings.**
+- **The original's whole-object tangent box is metric once the camera is
+  calibrated.** On `box.JPG` it gives 0.320 × 0.461 × 0.304 m against the
+  traced 0.348 × 0.446 × 0.282 m, with zero reprojection error.
+- **Recursive boxes.** With the calibrated camera, every superpixel gets a box
+  (104/104 on `box.JPG`, against 6 with the original code). But the boxes
+  drift in 3D. A superpixel is a patch of surface, while its box depth comes
+  from its 2D extent, and the error accumulates along the propagation.
+- **Drift fix (`patch_reconstruct`).** Each superpixel is a planar patch: its
+  pixels back-projected onto an axis-aligned plane, so no depth is guessed.
+  - Seeds sit on faces of the main box. That box is `lift3d`'s edge-refined
+    fit, which matters: anchoring on the silhouette-only box gives 2.2 %
+    median error, the edge-refined box 1.3 %.
+  - A neighbour goes on the same plane or folds through the shared edge.
+    Colour similarity and vanishing-point edge votes pick between the two
+    (the orientation-map cue of Lee, Hebert & Kanade 2009).
+  - A connectivity refinement then minimises 3D gaps across boundaries.
+- **Make3D-style baseline (`make3d_planes`).** A global least-squares solve of
+  one free plane per superpixel, with Make3D's connectivity and coplanarity
+  terms (Saxena et al. 2009). The original Make3D code and its learned depth
+  model are not reachable from this environment, and the model was trained on
+  outdoor scenes. Its learned per-pixel term is therefore replaced by the same
+  seed anchors the recursive method uses.
+
+**Per-pixel depth error against 3D ground truth** (`python segment3d_eval.py`):
+
+| Method | box.JPG (traced box): median / ≤3 % | synthetic pig: median / ≤3 % |
+|---|---|---|
+| Recursive boxes (original method, calibrated) | 3.6 % / 46 % | 3.0 % / 49 % |
+| **Recursive planar patches (drift fix)** | **1.3 % / 84 %** | 4.0 % / 40 % |
+| — without the orientation cue | 1.2 % / 86 % | 4.0 % / 40 % |
+| — without connectivity refinement | 1.3 % / 82 % | 5.0 % / 29 % |
+| — with the silhouette-only main box | 2.2 % / 65 % | 4.8 % / 29 % |
+| Make3D-style MRF (same anchors) | 1.8 % / 68 % | 5.1 % / 31 % |
+| `lift3d` (box / round model), reference | 0.5 % / 100 % | 2.0 % / 68 % |
+
+**Reading the results.**
+- **Flat-faced objects.** On `box.JPG` the drift fix cuts the original
+  recursive method's error by about 3× and beats the Make3D-style global
+  solve. The edge-refined main box is the largest single gain; connectivity
+  refinement removes gross outliers (mean error 3.4 % → 2.6 %).
+- **Orientation cue.** It does not help on this photo (printed graphics give
+  misleading edges) and has no effect on the untextured pig.
+- **Curved objects.** Axis-aligned flat patches suit flat faces, not curves.
+  On the pig the patches are worse than the original's solid segment boxes,
+  and the Make3D-style solve, with few anchors, is worst.
+- **Whole-object models.** For both objects, `lift3d`'s whole-object models
+  are more accurate than any per-segment method. Per-segment methods only pay
+  off when parts sit at different depths, which these test objects lack.
+
+**Possible next steps.**
+- Free (not axis-aligned) patch planes for curved objects.
+- Combine the round model as anchors with segment-level detail.
+- Test on multi-part objects.

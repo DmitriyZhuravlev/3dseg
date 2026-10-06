@@ -420,7 +420,7 @@ The geometry is replaced with the calibrated camera from `lift3d.py`.
 
 | Method | box.JPG (traced box): median / ≤3 % | synthetic pig: median / ≤3 % |
 |---|---|---|
-| Recursive boxes (original method, calibrated) | 3.6 % / 46 % | 3.0 % / 49 % |
+| Recursive boxes (original method, calibrated; segments may also attach to main-box planes) | 3.6 % / 46 % | 3.0 % / 49 % |
 | **Recursive planar patches (drift fix)** | **1.3 % / 84 %** | 4.0 % / 40 % |
 | — without the orientation cue | 1.2 % / 86 % | 4.0 % / 40 % |
 | — without connectivity refinement | 1.3 % / 82 % | 5.0 % / 29 % |

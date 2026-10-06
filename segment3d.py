@@ -208,14 +208,18 @@ def segment_at(labels, p, r=25):
 
 
 def reconstruct(cam, image, mask, vps, region_size=160, ruler=120, passes=2, max_rms=6.0, log=print,
-                attach_main=True):
+                attach_main=True, main_box=None):
     """Recursive per-segment metric boxes. Returns dict with boxes {label: (origin, size)} and diagnostics."""
     global SIGNS
     SIGNS = axis_signs(cam, vps)
-    main, main_iou = lift3d.fit_bounding_box(cam, mask, fit_yaw=False)     # axis-aligned with the VPs
-    cx, cy, ln, wd, ht, _ = main
-    main_lo = np.array([cx - ln / 2, cy - wd / 2, 0.0])
-    main_hi = np.array([cx + ln / 2, cy + wd / 2, ht])
+    if main_box is not None:                       # a known extent (e.g. from multi-view carving), (lo, hi)
+        main_lo, main_hi = (np.asarray(v, float) for v in main_box)
+        main, main_iou = None, float("nan")
+    else:
+        main, main_iou = lift3d.fit_bounding_box(cam, mask, fit_yaw=False)     # axis-aligned with the VPs
+        cx, cy, ln, wd, ht, _ = main
+        main_lo = np.array([cx - ln / 2, cy - wd / 2, 0.0])
+        main_hi = np.array([cx + ln / 2, cy + wd / 2, ht])
     labels, contour = superpixels(image, mask, region_size, ruler)
     ids = [int(v) for v in np.unique(labels) if v > 0]
     boxes2d = {i: tangent_box_2d(labels == i, vps) for i in ids}

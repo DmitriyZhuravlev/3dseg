@@ -1,0 +1,16 @@
+{
+ "reference_frame": 20,
+ "thickness": 1.0,
+ "calibration": {},
+ "extent": [
+  0.592,
+  0.457,
+  1.003
+ ],
+ "unit": "subject heights",
+ "held_out_iou": null,
+ "held_out_iou_flat_cutout": null,
+ "n_calib": 0,
+ "n_held": 0,
+ "seconds": 3
+}

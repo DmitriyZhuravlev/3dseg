@@ -8,15 +8,31 @@ fitting/rendering of 3D boxes.
 > Research code: scripts are standalone experiments, several are near-duplicate
 > variants (`*_bk`, `*_cop`, `*_v2`, `*_extrem`), and some have hard-coded paths.
 
-## Requirements
+## Real-time 3D viewer
 
-Python 3 with: `numpy`, `scipy`, `opencv-python`, `scikit-image`,
-`scikit-learn`, `shapely`, `matplotlib`, `flowiz`, and PyOpenGL (used by
-`opengl_drawer.py`).
+`viewer3d/` is an OpenGL 3.3 viewer for the cuboids the pipeline lifts out of
+images. It has a perspective camera with orbit, pan and zoom controls,
+Blinn-Phong lighting with shadow maps, a textured ground plane and MSAA. See
+**[RUN.md](RUN.md)** for setup, controls and how to export pipeline output to it.
 
 ```bash
-pip install numpy scipy opencv-python scikit-image scikit-learn shapely matplotlib flowiz PyOpenGL
+pip install -r requirements.txt
+python -m viewer3d                      # window
+python -m viewer3d --headless --out frame.png
 ```
+
+![viewer](docs/viewer.png)
+
+## Requirements
+
+Python 3 with the packages in `requirements.txt`:
+
+```bash
+pip install -r requirements.txt
+```
+
+`opengl_drawer.py` draws with matplotlib (despite its name). The OpenGL
+rendering is in `viewer3d/`.
 
 ## Layout
 
@@ -28,7 +44,9 @@ pip install numpy scipy opencv-python scikit-image scikit-learn shapely matplotl
 | `segment*.py`, `graph.py`, `seg.py` | Superpixel / graph-based segmentation (plain, BEV, DFS, RAFT variants) |
 | `img_rec*.py`, `img_iter*.py` | Image reconstruction / iterative IPM experiments |
 | `normals.py`, `ransac.py`, `shape.py` | Surface normals, RANSAC plane fitting, shape helpers |
-| `cube.py`, `render.py`, `opengl_drawer.py` | Cube fitting and rendering |
+| `cube.py`, `render.py`, `opengl_drawer.py` | Cube fitting; matplotlib 3D plots; export to the viewer |
+| `viewer3d/` | Real-time OpenGL viewer (math, scene graph, geometry, renderer, app) |
+| `tests/` | pytest suite for the viewer (math, geometry, offscreen rendering) |
 | `surf.py`, `surf/` | Surface reconstruction experiments (with its own copies of `cube.py`, `lifting.py`, `main2.py`) |
 | `*.png`, `*.JPG`, `*.bmp` | Sample/reference images and result figures |
 

@@ -23,6 +23,10 @@ python -m viewer3d --headless --out frame.png
 
 ![viewer](docs/viewer.png)
 
+![views](docs/demo_views.png)
+
+![orbit](docs/demo_orbit.gif)
+
 ## Requirements
 
 Python 3 with the packages in `requirements.txt`:

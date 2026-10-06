@@ -37,6 +37,13 @@ against synthetic shapes with known geometry. See NOTES.md §6.
 
 ![lifting](docs/lift3d_results.png)
 
+Step by step (`docs/make_demo.py` regenerates these):
+
+![pig pipeline](docs/demo_pipeline_pig.png)
+![box pipeline](docs/demo_pipeline_box.png)
+![before/after](docs/demo_before_after.png)
+![orbit](docs/demo_lift_orbit.gif)
+
 ## Requirements
 
 Python 3 with the packages in `requirements.txt`:

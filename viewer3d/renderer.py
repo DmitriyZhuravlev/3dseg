@@ -16,15 +16,18 @@ uniform mat3 u_normal_mat;
 in vec3 in_pos;
 in vec3 in_normal;
 in vec2 in_uv;
+in vec3 in_color;
 out vec3 v_world;
 out vec3 v_normal;
 out vec2 v_uv;
+out vec3 v_color;
 out vec4 v_light_pos;
 void main() {
     vec4 world = u_model * vec4(in_pos, 1.0);
     v_world = world.xyz;
     v_normal = u_normal_mat * in_normal;
     v_uv = in_uv;
+    v_color = in_color;
     v_light_pos = u_light_vp * world;
     gl_Position = u_view_proj * world;
 }
@@ -47,6 +50,7 @@ uniform float u_specular;
 in vec3 v_world;
 in vec3 v_normal;
 in vec2 v_uv;
+in vec3 v_color;
 in vec4 v_light_pos;
 out vec4 f_color;
 
@@ -65,7 +69,7 @@ float shadow_factor(vec3 n, vec3 l) {
 void main() {
     vec3 n = normalize(v_normal);
     if (!gl_FrontFacing) n = -n;         // double-sided materials
-    vec3 albedo = pow(u_color, vec3(2.2));  // material colours are given in sRGB
+    vec3 albedo = pow(u_color * v_color, vec3(2.2));  // material and vertex colours are sRGB
     if (u_use_tex) albedo *= pow(texture(u_tex, v_uv).rgb, vec3(2.2));  // sRGB -> linear
 
     vec3 l = normalize(-u_sun_dir);
@@ -101,9 +105,9 @@ class GpuMesh:
         self.vbo = ctx.buffer(geometry.interleaved().tobytes())
         self.ibo = ctx.buffer(geometry.indices.tobytes())
         self.vao = ctx.vertex_array(
-            mesh_prog, [(self.vbo, "3f 3f 2f", "in_pos", "in_normal", "in_uv")], self.ibo)
+            mesh_prog, [(self.vbo, "3f 3f 2f 3f", "in_pos", "in_normal", "in_uv", "in_color")], self.ibo)
         self.depth_vao = ctx.vertex_array(
-            depth_prog, [(self.vbo, "3f 12x 8x", "in_pos")], self.ibo)
+            depth_prog, [(self.vbo, "3f 12x 8x 12x", "in_pos")], self.ibo)
 
 
 class Renderer:

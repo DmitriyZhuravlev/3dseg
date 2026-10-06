@@ -13,17 +13,21 @@ import numpy as np
 
 
 class Geometry:
-    def __init__(self, positions, normals, uvs, indices):
+    def __init__(self, positions, normals, uvs, indices, colors=None):
         self.positions = np.ascontiguousarray(positions, dtype=np.float32).reshape(-1, 3)
         self.normals = np.ascontiguousarray(normals, dtype=np.float32).reshape(-1, 3)
         self.uvs = np.ascontiguousarray(uvs, dtype=np.float32).reshape(-1, 2)
         self.indices = np.ascontiguousarray(indices, dtype=np.uint32).reshape(-1)
         n = len(self.positions)
+        # optional per-vertex colour (sRGB 0..1), multiplied with the material colour
+        self.colors = (np.ones((n, 3), np.float32) if colors is None
+                       else np.ascontiguousarray(colors, dtype=np.float32).reshape(-1, 3))
+        assert len(self.colors) == n, "colour count mismatch"
         assert len(self.normals) == n and len(self.uvs) == n, "attribute count mismatch"
         assert self.indices.max(initial=0) < n, "index out of range"
 
     def interleaved(self):
-        return np.hstack([self.positions, self.normals, self.uvs]).astype(np.float32)
+        return np.hstack([self.positions, self.normals, self.uvs, self.colors]).astype(np.float32)
 
     @property
     def triangle_count(self):

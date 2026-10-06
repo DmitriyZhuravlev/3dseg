@@ -1753,6 +1753,25 @@ def compute_average_processed_labels(processed_labels_list):
     return averaged_processed_labels
 
 
+def bottoms_to_centers(bottoms, heights):
+    """
+    Converts bottom face 3D points to cube centers.
+
+    :param bottoms: List of bottom faces (each is an array of 4 (x, y, z) points).
+    :param heights: List of heights for each cube.
+    :return: List of computed 3D centers [(x, y, z)].
+    """
+    centers = []
+
+    for bottom, height in zip(bottoms, heights):
+        # Compute the average of the 4 bottom face points
+        avg_bottom = np.mean(bottom, axis=0)  # (x, y, z)
+
+        # Compute center by adding half the height in Z direction
+        center = avg_bottom + np.array([0, 0, height / 2])
+        centers.append(center)
+
+
 def process_images(reference_image_path, folder_path, output_path, method="otsu", 
                    threshold_value=50, region_size=40, ruler=30, slic_iterations=10):
     # Create the output directory if it doesn't exist
@@ -2471,7 +2490,9 @@ def process_images(reference_image_path, folder_path, output_path, method="otsu"
             #closest_points_3d = find_closest_3d_point(extrem, pr_boxes, bottoms, heights)
             #draw_cubes_in_3d(bottoms, heights, colors, closest_points_3d)
             #draw_3d_points_with_hull(#ext_3d)
-            draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors) #, closest_points_3d)
+            #draw_cubes_with_bounding_image(marked_image, bottoms, heights, colors) #, closest_points_3d)
+            centers = bottoms_to_centers(bottoms, heights)
+            draw_interpolated_surface(centers, resolution=100, method='cubic')
 
 
 # Example usage

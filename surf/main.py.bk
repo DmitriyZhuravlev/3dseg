@@ -1,0 +1,565 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from skimage.io import imread
+from skimage.color import rgb2gray
+from skimage.filters import gaussian, threshold_otsu, threshold_local
+from skimage.segmentation import slic, mark_boundaries
+from scipy.spatial import Delaunay
+from matplotlib.lines import Line2D
+from skimage import img_as_float
+from skimage.transform import ProjectiveTransform
+
+# import math
+# from cube import *
+
+import sys
+import os
+
+
+from graph import * #build_graph, dfs, bfs, dijkstra, default_weight
+from plot import * #plot_mask, plot_centers_and_edges, plot_graph_with_avg_weights
+from segment import *
+
+
+
+debug = True
+
+# vertical vp
+line1 = [[710, 952], [646, 234]]
+line2 = [[2326, 1162], [2466, 478]]
+
+# left horizontal vp 
+line3 = [[1072, 1572], [720, 982]]
+line4 = [[1082, 810], [668, 240]]
+#line4 = [[2452, 442], [1900, 24]]
+
+# right horizontal vp 
+line5 = [[1128, 1574], [2320, 1156]]
+line6 = [[1098, 874], [2458, 488]]
+
+# Define input lines as NumPy arrays
+lines = {
+    "vertical_lines": np.array([line1, line2]),
+    "left_hor_lines": np.array([line3, line4]),
+    "right_hor_lines": np.array([line5, line6]),
+}
+
+
+
+
+def compute_intersection(line1, line2):
+    """
+    Compute the intersection of two lines.
+    Args:
+        line1: [[x1, y1], [x2, y2]] (two points defining the first line).
+        line2: [[x1, y1], [x2, y2]] (two points defining the second line).
+    Returns:
+        Intersection point [x, y] or None if lines are parallel.
+    """
+    l1 = np.cross([line1[0][0], line1[0][1], 1], [line1[1][0], line1[1][1], 1])
+    l2 = np.cross([line2[0][0], line2[0][1], 1], [line2[1][0], line2[1][1], 1])
+    intersection = np.cross(l1, l2)
+    if intersection[2] == 0:
+        return None  # Parallel lines
+    return [intersection[0] / intersection[2], intersection[1] / intersection[2]]
+
+# Compute vanishing points
+vert_vp = compute_intersection(lines["vertical_lines"][0], lines["vertical_lines"][1])
+hor_left_vp = compute_intersection(lines["left_hor_lines"][0], lines["left_hor_lines"][1])
+hor_right_vp = compute_intersection(lines["right_hor_lines"][0], lines["right_hor_lines"][1])
+
+
+
+
+
+# Optional: Your own weight function
+def weight_by_euclidean(p1, p2):
+    return np.linalg.norm(p1 - p2)
+
+def dist0(points1, points2):
+    return np.linalg.norm(np.array(points1[0]) - np.array(points2[0]))
+
+
+def compute_foreground_mask(img, ref, method="otsu", threshold_value=0.1):
+    # Convert to grayscale
+    gray_img = rgb2gray(img)
+    gray_ref = rgb2gray(ref)
+
+    # Absolute difference
+    abs_diff = np.abs(gray_img - gray_ref)
+    abs_diff_blur = gaussian(abs_diff, sigma=25.0)
+
+    # Thresholding
+    if method == "adaptive":
+        block_size = 35
+        local_thresh = threshold_local(abs_diff_blur, block_size)
+        object_mask = abs_diff_blur > local_thresh
+    elif method == "otsu":
+        thresh_val = threshold_otsu(abs_diff_blur)
+        object_mask = abs_diff_blur > thresh_val
+    else:
+        object_mask = abs_diff_blur > threshold_value
+
+    return object_mask
+
+def load_images():
+    if len(sys.argv) > 2 and os.path.exists(sys.argv[1]) and os.path.exists(sys.argv[2]):
+        img = imread(sys.argv[1])
+        ref = imread(sys.argv[2])
+        print(f"Loaded image: {sys.argv[1]}")
+        print(f"Loaded reference (background): {sys.argv[2]}")
+    else:
+        print("No valid image path provided. Using default  image.")
+        img = imread("/home/dzhura/ComputerVision/data/img/test/out/pig.JPG").astype(np.float32) / 255.
+        ref = imread("/home/dzhura/ComputerVision/data/img/reference.JPG").astype(np.float32) / 255.
+
+    return img_as_float(img), img_as_float(ref)
+    
+
+debug = True
+
+def main():
+    img, ref = load_images()
+
+    # Compute foreground mask using difference
+    method = "otsu"  # Can be "adaptive", "otsu", or "fixed"
+    foreground_mask = compute_foreground_mask(img, ref, method=method)
+    
+    if debug:
+        # Visualize the mask
+        plt.figure(figsize=(8, 8))
+        plt.imshow(foreground_mask, cmap='gray')
+        plt.title(f"Foreground Mask ({method} thresholding)")
+        plt.axis('off')
+        plt.tight_layout()
+        plt.show()
+
+    # Run SLIC only on masked foreground
+    segments = slic(img, n_segments=3, compactness=100, start_label=1, mask=foreground_mask)
+    segment_ids = np.unique(segments)
+
+    centers = []
+    valid_ids = []
+    
+    for i in segment_ids:
+        coords = np.column_stack(np.nonzero(segments == i))
+        mean_yx = np.mean(coords, axis=0)
+        y, x = map(int, mean_yx)
+    
+        # Check if center lies in the foreground mask
+        if 0 <= y < foreground_mask.shape[0] and 0 <= x < foreground_mask.shape[1]:
+            if foreground_mask[y, x]:  # Only include if inside the mask
+                centers.append(mean_yx)
+                valid_ids.append(i)
+
+    
+    centers = np.array(centers)
+    tri = Delaunay(centers)
+
+    if debug:
+        plot_centers_and_edges(img, segments, centers, tri)
+
+
+    segment_infos = build_segment_info_list(segments, foreground_mask, vert_vp, hor_left_vp, hor_right_vp, debug=debug)
+    
+    # Build graph
+    graph = build_segment_info_graph(
+        segment_infos, 
+        foreground_mask, 
+        vert_vp, 
+        hor_left_vp, 
+        hor_right_vp, 
+        weight_func=weight_by_euclidean,
+        debug=True
+    )
+    
+    draw_segment_graph(segment_infos, background_image=img)
+    
+    cube_img = draw_all_segment_cubes_matplotlib(segment_infos, background_image=img)
+    
+    
+    cube = False #True
+    pig = True #False
+
+    if pig:
+        g_xmin = xmin = 0
+        g_xmax = xmax = 21
+        g_ymin = ymin = 0
+        g_object_width = g_ymax = ymax = 7
+        g_zmin = zmin = 0
+        g_zmax = zmax = 7
+    elif cube:
+        g_xmin = xmin = 0
+        g_xmax = xmax = 21
+        g_ymin = ymin = 0
+        g_object_width = g_ymax = ymax = 21
+        g_zmin = zmin = 0
+        g_zmax = zmax = 21
+        
+    object_length = xmax - xmin
+    object_width = ymax - ymin
+    object_height = zmax - zmin
+
+    print(f"xmin: {xmin}")
+    print(f"xmax: {xmax}")
+    print(f"ymin: {ymin}")
+    print(f"ymax: {ymax}")
+    print(f"zmin: {zmin}")
+    print(f"zmax: {zmax}")
+
+
+    print(f"object length: {object_length}")
+    print(f"object width: {object_width}")
+    print(f"object height: {object_height}")
+    
+
+    mask_center = np.mean(foreground_mask, axis=0)
+    lower_face, upper_face, extrem = get_projected_box(foreground_mask, mask_center, vert_vp, hor_left_vp, hor_right_vp, debug=True)
+    print(f"lower face: {lower_face}")
+    print(f"lower face: {upper_face}")
+    #draw_cube(lower_face, upper_face,  background_image=img, color='red', linewidth=4)
+    draw_cube(lower_face, upper_face, background_image=img, save_path="cube_overlay.png")
+    
+    bottom = np.array([[0, 0, 0], [g_xmax, 0, 0], [g_xmax, g_ymax, 0], [0, g_ymax, 0]])
+    top = np.array([[0, 0, g_zmax], [g_xmax, 0, g_zmax], [g_xmax, g_ymax, g_zmax], [0, g_ymax, g_zmax]])
+    cube_2d = get_projected_cube_faces(lower_face, upper_face)  # Get all 6 faces of the cube
+    cube_3d = get_projected_cube_faces(bottom, top)
+
+
+    
+
+    # top down
+    pts1 = np.float32(lower_face)
+    pts2 = np.float32([(xmin, ymin), (xmin + object_length, ymin), (xmin + object_length, ymin + object_width), (xmin, ymin + object_width)])
+    pts3 = np.float32(upper_face)
+                
+    # pts1, pts2 = src_points, dst_points
+    ipm_matrix = get_projective_transform(pts1, pts2)
+    inv_ipm_matrix = get_projective_transform(pts2, pts1)
+    top_inv_ipm_matrix = get_projective_transform(pts1, pts3)
+    top_ipm_matrix = get_projective_transform(pts3, pts2)
+
+                
+    # left face
+    pts1 = np.float32([lower_face[0], upper_face[0], upper_face[3], lower_face[3]])
+    pts2 = np.float32([(ymin, zmin), (ymin, zmin + object_height), (ymin + object_width, zmin + object_height), (ymin + object_width, zmin)])
+    pts3 = np.float32([lower_face[1], upper_face[1], upper_face[2], lower_face[2]])
+
+    ipm_left = get_projective_transform(pts1, pts2)
+    inv_ipm_left = get_projective_transform(pts2, pts1)
+    top_inv_ipm_left = get_projective_transform(pts1, pts3)
+    top_ipm_left = get_projective_transform(pts3, pts2)
+
+    hor_right_neg, hor_right_pos, vert_neg, vert_pos, hor_left_neg, hor_left_pos = extrem
+
+    # down = extrem[0] # RED d
+    # top = extrem[1] # GREEN u
+    # left = extrem[5] # MINT r
+    # left_v = extrem[2] # BLUE l
+    # right_v = extrem[3] # ORANGE r
+    # right_u = extrem[4] # PURPLE l
+
+    # extrem = [down, top, left_v, right_v, left, right_u]
+    
+    initial_segments = []
+    
+    # hor_right_neg
+    segment_label = find_segment_for_point(segments, hor_right_neg)
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    if debug:
+        highlite_segment(img, mask, segments, segment_label)
+
+    segment_info = get_segment_by_id(segment_infos, segment_label)
+    nb_cube_2d = segment_info.cube_2d
+
+    # bottom
+    face1 = "bottom"
+    face2 = "top"
+
+    pts1 = np.float32(cube_2d[face1])
+    arr = cube_3d[face1].copy()[:, :2]
+    pts2 = np.float32(arr)
+    ipm = get_projective_transform(pts1, pts2)
+
+    dist_2d = dist0(cube_2d[face1], cube_2d[face2])
+    dist_3d = dist0(cube_3d[face1], cube_3d[face2])
+    nb_dist_2d = dist0(nb_cube_2d[face1], nb_cube_2d[face2])
+    nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+    mapped = map_points_to_BEV(nb_cube_2d[face1], ipm)
+    upper_3d = np.column_stack((mapped.copy(), np.full(mapped.shape[0], cube_3d[face1][0, 2])))
+    lower_3d = upper_3d.copy()
+    lower_3d[:, 2] += nb_dist_3d
+
+    
+    initial_segments.append((segment_label, lower_3d, upper_3d))
+    
+    
+    
+    segment_index = 1 # top
+    segment_label = find_segment_for_point(segments, extrem[segment_index])
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    highlite_segment(img, mask, segments, segment_label)
+
+    # lower_face, upper_face, _ = get_projected_box(mask, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+
+    # nb_cube_2d = get_projected_cube_faces(lower_face, upper_face) 
+
+    segment_info = get_segment_by_id(segment_infos, segment_label)
+    nb_cube_2d = segment_info.cube_2d
+
+    face1 = "top"
+    face2 = "bottom"
+
+    pts1 = np.float32(cube_2d[face1])
+    arr = cube_3d[face1].copy()[:, :2]
+    pts2 = np.float32(arr)
+    ipm = get_projective_transform(pts1, pts2)
+
+    dist_2d = dist0(cube_2d[face1], cube_2d[face2])
+    dist_3d = dist0(cube_3d[face1], cube_3d[face2])
+    nb_dist_2d = dist0(nb_cube_2d[face1], nb_cube_2d[face2])
+    nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+    mapped = map_points_to_BEV(nb_cube_2d[face1], ipm)
+    upper_3d = np.column_stack((mapped.copy(), np.full(mapped.shape[0], cube_3d[face1][0, 2])))
+    lower_3d = upper_3d.copy()
+    lower_3d[:, 2] -= nb_dist_3d
+
+    # bottoms = []
+    # heights = []
+
+
+    # bottoms.append(np.array(lower_3d))
+    # heights.append(nb_dist_3d)
+    # draw_cubes_with_bounding_image(img, bottoms, heights, alpha = 0.15)
+    
+    initial_segments.append((segment_label, lower_3d, upper_3d))
+    
+    
+    segment_index = 2
+    segment_label = find_segment_for_point(segments, extrem[segment_index])
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    highlite_segment(img, mask, segments, segment_label)
+
+    segment_info = get_segment_by_id(segment_infos, segment_label)
+    nb_cube_2d = segment_info.cube_2d
+    face1 = "left"
+    face2 = "right"
+
+    pts1 = np.float32(cube_2d[face1])
+    arr = cube_3d[face1].copy()
+    arr = arr[:, 1:]
+    arr[:, [0, 1]] = arr[:, [1, 0]]  # swap y-z -> z-y
+    pts2 = np.float32(arr)
+    ipm = get_projective_transform(pts1, pts2)
+
+    dist_2d = dist0(cube_2d[face1], cube_2d[face2])
+    dist_3d = dist0(cube_3d[face1], cube_3d[face2])
+    nb_dist_2d = dist0(nb_cube_2d[face1], nb_cube_2d[face2])
+    nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+    mapped = map_points_to_BEV(nb_cube_2d[face1], ipm)
+    mapped = mapped[:, [1, 0]]  # swap z-y
+
+    l_3d = np.column_stack((np.full(mapped.shape[0], cube_3d[face1][0, 0]), mapped))
+    r_3d = l_3d.copy()
+    r_3d[:, 0] += nb_dist_3d
+
+    upper_3d = np.array([l_3d[1], r_3d[1], r_3d[2], l_3d[2]])
+    lower_3d = np.array([l_3d[0], r_3d[0], r_3d[3], l_3d[3]])
+ 
+    initial_segments.append((segment_label, lower_3d, upper_3d))
+    
+    segment_index = 3
+    segment_label = find_segment_for_point(segments, extrem[segment_index])
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    highlite_segment(img, mask, segments, segment_label)
+
+    segment_info = get_segment_by_id(segment_infos, segment_label)
+    nb_cube_2d = segment_info.cube_2d
+
+    face1 = "right"
+    face2 = "left"
+
+    pts1 = np.float32(cube_2d[face1])
+    arr = cube_3d[face1].copy()
+    arr = arr[:, 1:]
+    arr[:, [0, 1]] = arr[:, [1, 0]]  # swap y-z -> z-y
+    pts2 = np.float32(arr)
+    ipm = get_projective_transform(pts1, pts2)
+
+    dist_2d = dist0(cube_2d[face1], cube_2d[face2])
+    dist_3d = dist0(cube_3d[face1], cube_3d[face2])
+    nb_dist_2d = dist0(nb_cube_2d[face1], nb_cube_2d[face2])
+    nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+    mapped = map_points_to_BEV(nb_cube_2d[face1], ipm)
+    mapped = mapped[:, [1, 0]]  # swap z-y
+
+    r_3d = np.column_stack((np.full(mapped.shape[0], cube_3d[face1][0, 0]), mapped))
+    l_3d = r_3d.copy()
+    l_3d[:, 0] -= nb_dist_3d
+
+    upper_3d = np.array([l_3d[1], r_3d[1], r_3d[2], l_3d[2]])
+    lower_3d = np.array([l_3d[0], r_3d[0], r_3d[3], l_3d[3]])
+    
+    initial_segments.append((segment_label, lower_3d.copy(), upper_3d.copy()))
+            
+    segment_index = 4
+    segment_label = find_segment_for_point(segments, extrem[segment_index])
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    highlite_segment(img, mask, segments, segment_label)
+
+    mask_center = np.mean(mask, axis=0)
+    lower_face, upper_face, _ = get_projected_box(mask, mask_center, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+
+    pr_lower_face = map_points_to_BEV(lower_face, ipm_matrix)
+    height = calc_height(lower_face, upper_face, pr_lower_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height)
+    z = 0
+
+    avg_bottom_3d = [[x, y, z] for x, y in pr_lower_face]
+    
+    lower_3d = np.array(avg_bottom_3d)
+    upper_3d = lower_3d.copy()  # Copy left_3d structure
+    upper_3d[:, 2] += height  # Add nb_dist_3d to z-coordinates
+
+    
+    #draw_cubes_with_bounding_image(img, bottoms, heights, alpha = 0.15)
+    
+    initial_segments.append((segment_label, lower_3d.copy(), upper_3d.copy()))
+
+    segment_index = 5
+    segment_label = find_segment_for_point(segments, extrem[segment_index])
+    mask = (segments == segment_label)  # Get all pixels belonging to the segment
+
+    highlite_segment(img, mask, segments, segment_label)
+
+    mask_center = np.mean(mask, axis=0)
+    lower_face, upper_face, _ = get_projected_box(mask, mask_center, vert_vp, hor_left_vp, hor_right_vp, debug=False)
+
+    nb_cube_2d = get_projected_cube_faces(lower_face, upper_face)
+    # Convert face points to float32 for transformation
+    pts1 = np.float32(cube_2d["right"])
+    arr = cube_3d["right"].copy()
+    # Step 1: Remove the first column (x) and keep only the second and third columns
+    arr = arr[:, 1:]  # This slices the array from the second column onwards (index 1)
+    # Step 2: Swap the second and third columns (y and z)
+    arr[:, [0, 1]] = arr[:, [1, 0]]
+
+    pts2 = np.float32(arr)  # Remove 3rd coordinate (only x, y)
+
+    # Compute Inverse Perspective Mapping (IPM) matrix
+    ipm = get_projective_transform(pts1, pts2)
+
+    # Compute distances
+    dist_2d = dist0(cube_2d["left"], cube_2d["right"])
+    dist_3d = dist0(cube_3d["left"], cube_3d["right"])
+
+    nb_dist_2d = dist0(nb_cube_2d["left"], nb_cube_2d["right"])
+
+    # Compute neighbor's 3D distance using ratio
+    nb_dist_3d = (dist_3d / dist_2d) * nb_dist_2d if dist_2d != 0 else 0
+
+    # Transform the 2D points of the neighbor's face into BEV (Bird's Eye View)
+    right_3d = map_points_to_BEV(nb_cube_2d["right"], ipm)  # Output is [z, y]
+    
+    # Swap columns to reorder from [z, y] → [y, z]
+    right_3d = right_3d[:, [1, 0]]
+    
+    # Extend to [x, y, z] by adding the correct x-coordinate
+    right_3d = np.column_stack((np.full(right_3d.shape[0], np.array(cube_3d["right"])[0, 0]), right_3d))
+    # Step 2: Compute right_3d correctly (ensure 2D shape is maintained)
+    left_3d = right_3d.copy()  # Copy left_3d structure
+    left_3d[:, 0] -= nb_dist_3d  # Add nb_dist_3d to x-coordinates
+    
+    upper_3d = np.array([left_3d[1], right_3d[1], right_3d[2], left_3d[2]])
+    lower_3d = np.array([left_3d[0], right_3d[0], right_3d[3], left_3d[3]])
+
+    
+    #draw_cubes_with_bounding_image(img, bottoms, heights, alpha = 0.15)
+    
+    initial_segments.append((segment_label, lower_3d.copy(), upper_3d.copy()))
+    
+     # Dictionary to collect lower and upper cubes per segment
+    segment_bottoms = defaultdict(list)
+    segment_tops = defaultdict(list)
+
+    bottoms = []
+    heights = []
+
+
+    for segment_label, lower_3d, upper_3d in initial_segments:
+        # Run Dijkstra from start
+        start_segment = get_segment_by_id(segment_infos, segment_label) #next(iter(graph))  # e.g., first segment in graph
+        start_segment.cube_3d = get_projected_cube_faces(lower_3d, upper_3d)
+        
+
+
+        distances, prev = dijkstra_segment_graph(start_segment)
+        
+        if len(distances) > 1:
+            # Pick the farthest reachable segment (not the start)
+            target_segment = list(distances.keys())[-1]
+        else:
+            print("Not enough reachable segments for path visualization.")
+            return
+        if debug: 
+            path = reconstruct_path(prev, target_segment)
+            
+            # Print distances
+            print(f"Distances from Segment {start_segment.segment_id}:")
+            for seg, dist in distances.items():
+                print(f"  -> Segment {seg.segment_id}: {dist:.2f}")
+            
+            draw_path(segment_infos, path, start_segment, target_segment)
+
+        # bottoms = []
+        # heights = []
+
+    
+        for info in segment_infos:
+            
+            segment_bottoms[info.segment_id].append(info.cube_3d["bottom"])
+            segment_tops[info.segment_id].append(info.cube_3d["top"])
+            
+            lower = info.cube_3d["bottom"]
+            upper = info.cube_3d["top"]
+            
+            height = (upper - lower)[0, 2]
+            
+            bottoms.append(lower.copy())
+            heights.append(height.copy())
+            
+    if debug:       
+        draw_cubes_with_bounding_image(cube_img, bottoms, heights, alpha = 0.15)
+    
+
+    # Step 3: Compute average cube per segment
+    avg_bottoms = []
+    avg_heights = []
+    
+    for label in segment_bottoms:
+        bottoms = np.array(segment_bottoms[label])  # shape: (N, 4, 3)
+        tops = np.array(segment_tops[label])
+        
+        avg_bottom = np.mean(bottoms, axis=0)
+        avg_top = np.mean(tops, axis=0)
+        
+        height = (avg_top - avg_bottom)[0, 2]  # Use Z-axis height
+        
+        avg_bottoms.append(avg_bottom)
+        avg_heights.append(height)
+    
+    # Step 4: Draw simplified average cubes
+    draw_cubes_with_bounding_image(cube_img, avg_bottoms, avg_heights, alpha=0.15)
+ 
+
+if __name__ == "__main__":
+    main()

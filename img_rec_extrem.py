@@ -458,57 +458,6 @@ def compute_3d_box_from_plain_mask_new(mask, vert_vp, hor_left_vp, hor_right_vp,
     return np.array([corner_a, corner_b, corner_h, corner_c]), np.array([corner_a1, corner_b1, corner_h1, corner_c1]), np.array(extrem)
 
 
-def find_neighbors_within_mask(labels, e=10):
-    # Initialize the dictionary with each unique label
-    neighbors_dict = {label: {} for label in range(1, np.max(labels) + 1)}
-
-    # Iterate through each pixel in the labels array
-    for y in range(labels.shape[0]):
-        for x in range(labels.shape[1]):
-            current_label = labels[y, x]
-
-            # Only proceed if the current pixel is within the moving mask
-            if current_label == 0:
-                continue
-
-            # Define neighbor pixel offsets within epsilon distance
-            neighbors = {
-                'top': (y - e, x),
-                'bottom': (y + e, x),
-                'left': (y, x - e),
-                'right': (y, x + e),
-                'top-left': (y - e, x - e),
-                'top-right': (y - e, x + e),
-                'bottom-left': (y + e, x - e),
-                'bottom-right': (y + e, x + e),
-            }
-
-            # Iterate through the neighboring directions
-            for direction, (ny, nx) in neighbors.items():
-                # Skip neighbors that are out of bounds
-                if ny < 0 or ny >= labels.shape[
-                        0] or nx < 0 or nx >= labels.shape[1]:
-                    continue
-
-                # Skip if neighbor is outside the moving mask
-                # if moving_mask[ny, nx] == 0:
-                # continue
-
-                neighbor_label = labels[ny, nx]
-                if neighbor_label == 0:
-                    continue
-
-                # Only add if neighbor label is different from current label
-                if neighbor_label != current_label:
-                    if neighbor_label not in neighbors_dict[current_label]:
-                        neighbors_dict[current_label][neighbor_label] = set()
-
-                    # Record the direction of this neighbor relative to current label
-                    neighbors_dict[current_label][neighbor_label].add(
-                        direction)
-
-    return neighbors_dict
-
 def calc_height(lower_face, upper_face, bottom_face, inv_ipm_matrix, top_inv_ipm_matrix, object_height):
     proj_height = np.linalg.norm(lower_face[0] - upper_face[0])  # height
     proj_bottom = map_points_to_BEV([bottom_face[0]], inv_ipm_matrix)

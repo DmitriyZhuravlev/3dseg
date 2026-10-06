@@ -1,0 +1,13 @@
+# Image / geometry pipeline (existing research scripts)
+numpy
+scipy
+opencv-contrib-python   # cv2.ximgproc (SLIC superpixels) is used by several scripts
+scikit-image
+scikit-learn
+shapely
+matplotlib
+flowiz
+# Real-time 3D viewer (viewer3d/)
+moderngl>=5.8           # thin, modern OpenGL 3.3+ wrapper; also gives headless EGL contexts
+glfw>=2.5               # window + mouse/keyboard input for the interactive viewer
+Pillow                  # texture loading and screenshot saving

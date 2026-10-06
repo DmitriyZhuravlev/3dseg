@@ -75,6 +75,19 @@ python lift_to_viewer.py box.JPG pig.JPG --out out/   # ~2 min; writes *_cuboids
 python -m viewer3d --scene out/box_cuboids.json --texture "" --no-showcase --no-surface
 ```
 
+## 3D from video
+
+```bash
+python video_demos.py bike  --video bike.mp4  --out out/   # rigid motorcycle, fixed camera (~40 min CPU)
+python video_demos.py horse --video Horse.mp4 --out out/   # non-rigid: inflation + thickness from turning frames
+python video_demos.py yeop  --video Yeop.mp4  --out out/
+python video_demos.py air|monument|bender|por --video <file> --out out/
+```
+
+Each writes `<name>_model.ply` (coloured mesh: MeshLab/Blender), `<name>_metrics.json`, `<name>_sheet.png`.
+The building blocks (`video3d.py`) work for any fixed-camera video of a rigid object moving on a flat
+ground with visible painted lines; see NOTES.md section 7.
+
 ## Interactive smoke test without a display
 
 ```bash

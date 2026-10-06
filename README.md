@@ -44,6 +44,17 @@ Step by step (`docs/make_demo.py` regenerates these):
 ![before/after](docs/demo_before_after.png)
 ![orbit](docs/demo_lift_orbit.gif)
 
+## Video → 3D
+
+`video3d.py` reconstructs a rigid object moving in front of a fixed camera from all the frames of a
+video. It calibrates the camera from the painted ground lines, tracks the object's pose in each frame
+and carves a voxel model. On frames held out from the reconstruction, silhouette IoU rises from 0.41
+with one frame to 0.81 with the whole video. For non-rigid subjects (animals, people) it inflates the
+best side silhouette and fits its thickness on frames where the subject turns. See NOTES.md section 7
+and `video_demos.py`.
+
+![bike](docs/video3d/bike_pipeline.png)
+
 ## Requirements
 
 Python 3 with the packages in `requirements.txt`:

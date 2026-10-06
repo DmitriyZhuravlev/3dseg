@@ -266,3 +266,88 @@ I checked the 3D shape in two independent ways:
   IoU > 0.85;
 - the synthetic volume IoUs stay above 0.9 (box), 0.8 (cylinder) and
   0.6 (pig).
+
+## 7. 3D from video (`video3d.py`, `video_demos.py`)
+
+Silhouettes from a single photo leave the depth of the object to assumption.
+Video gives many views of the same object.
+
+### Rigid object, fixed camera (bike.mp4)
+
+1. **Background.** Per-pixel median over the video; this is `surf.py`'s
+   `reference.JPG`, computed instead of photographed.
+2. **Masks.** Median difference. Thin see-through gaps are kept (spokes,
+   frame). The cast shadow is stripped: in the lowest band of the silhouette
+   only long vertical runs survive.
+3. **Camera.**
+   - Forward vanishing point of the painted parking lines, by LSD + RANSAC.
+     It is found automatically, 3 px from a hand-picked value.
+   - Metric scale from the 2.74 m stall width.
+   - Focal length chosen so the stalls are 5.49 m deep (standard 9 × 18 ft).
+     The silhouette fit alone hardly constrains it.
+4. **Poses.**
+   - Ground track from the silhouette's contact point.
+   - Heading from the direction of travel.
+   - Lean from the turn radius.
+   - Each frame's (x, y, heading, lean) is then refined against its
+     silhouette, first by IoU and then by truncated chamfer distance,
+     alternating with carving.
+5. **Shape.** A voxel grid in the bike's own frame. A voxel is kept if it
+   projects inside the silhouette in ≥ 93 % of the training frames, which
+   tolerates mask errors and the moving rider. Output is a marching-cubes mesh
+   with per-vertex colour (median over the frames that see the vertex unoccluded).
+6. **Verification.** Even frames carve; odd frames are held out.
+
+| Frames used for carving | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 589 |
+|---|---|---|---|---|---|---|---|---|---|
+| Held-out silhouette IoU | 0.41 | 0.57 | 0.65 | 0.77 | 0.79 | 0.80 | 0.81 | 0.81 | 0.81 |
+
+- One frame (what a single photo gives) explains other views poorly.
+  Eight frames already reach 0.77.
+- Model size with rider: 2.04 × 0.72 × 1.50 m. This is plausible for a large
+  naked bike plus rider.
+- **Limit:** the camera is only ~1.3 m high and never sees the top, so the
+  shape is a visual hull. It is blobby where no silhouette carves (between
+  the rider's legs and the tank, under the seat).
+
+### Non-rigid subjects (horse, person)
+
+A trotting horse or a kicking person changes shape between frames, so
+carving across frames is not valid. Instead:
+
+- **Inflation.** The cleanest side-view silhouette is inflated: every part is
+  a tube whose half-depth at distance D from the outline is
+  `thickness * sqrt(D (2R - D))`, with R the local inscribed-disc radius.
+- **Thickness from other views.** Thickness is fitted on the frames where the
+  subject turns, using a weak-perspective view fit of the model to each mask.
+  Only the upper body is compared, so moving legs do not decide it.
+  Thicknesses within 0.005 of the best score count as ties, broken towards
+  round.
+- **Check.** On held-out turning frames the result is compared with a flat
+  cut-out.
+
+### Per video
+
+| Video | Method | Result |
+|---|---|---|
+| bike.mp4 | multi-view carving (above) | held-out IoU 0.81, metric |
+| Horse.mp4 | inflation, thickness fitted | see metrics; width barely observable (horse seldom turns to camera); scale assumes back height 1.55 m |
+| Yeop.mp4 | inflation, thickness fitted | see metrics; scale assumes body height 1.65 m |
+| Air.mp4 | single frame, round assumed | outline traced by hand + GrabCut: hazy sky has the paint's colour, crowd hides the gear |
+| Monument.mp4 | single frame, round assumed | camera barely moves; the fall is not usable as views (dust, partial) |
+| Bender.MP4 | single frame, round assumed | film cuts, one face |
+| Por.mp4 | single frame, round assumed | one viewpoint, 320×240 |
+
+Metrics per video: `docs/video3d/*_metrics.json`. Pictures: `*_sheet.png`,
+`bike_pipeline.png`, `bike_orbit.gif`.
+
+**Reproduce.** `python video_demos.py <name> --video <file> --out docs/video3d`.
+The videos and the generated `.ply` meshes are not committed.
+
+**Tests.** `tests/test_video3d.py` covers:
+- the ground camera's VP and scale;
+- carving a box that drives in a circle (volume IoU > 0.8, held-out
+  IoU > 0.8), and one view failing at it;
+- heading and lean signs;
+- inflation of a disc giving a sphere;
+- recovery of the weak-view rotation.

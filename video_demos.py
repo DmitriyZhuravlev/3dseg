@@ -11,6 +11,7 @@ the aircraft outline) are the ones used for the published results.
 """
 import argparse
 import json
+import math
 import os
 import time
 
@@ -291,12 +292,15 @@ def run_bike(video, out, log=print):
     return metrics
 
 
-def calibrate_inflation(model_mask, model_img, mpp, masks, calib, held, grid_th, upper):
+def calibrate_inflation(model_mask, model_img, mpp, masks, calib, held, grid_th, upper, tol=0.005):
     res = {}
     for th in grid_th:
         P = v3.InflatedModel(model_mask, model_img, mpp, thickness=th).surface_points()
         res[th] = float(np.mean([v3.fit_weak_view(P, masks[t], upper=upper)[1] for t in calib]))
-    best = max(res, key=res.get)
+    # The score is often flat across thicknesses (the views barely constrain depth): among
+    # the values within `tol` of the best, prefer the one closest to round (1.0).
+    top = max(res.values())
+    best = min((th for th in res if res[th] >= top - tol), key=lambda th: abs(math.log(th)))
     P = v3.InflatedModel(model_mask, model_img, mpp, thickness=best).surface_points()
     Pf = v3.InflatedModel(model_mask, model_img, mpp, thickness=0.05).surface_points()
     fits = [v3.fit_weak_view(P, masks[t], upper=upper) for t in held]

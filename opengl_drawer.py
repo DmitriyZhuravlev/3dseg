@@ -651,3 +651,38 @@ def draw_mesh_matplotlib(vertices, triangles, color='skyblue'):
 
     plt.tight_layout()
     plt.show()
+
+
+# ---------------------------------------------------------------------------
+# Real-time OpenGL viewer (viewer3d/) integration
+# ---------------------------------------------------------------------------
+def _cuboids_payload(lower_faces, heights, colors=None):
+    cuboids = []
+    colors = list(colors) if colors is not None else [None] * len(lower_faces)
+    for lower_face, h, color in zip(lower_faces, heights, colors):
+        lf = np.asarray(lower_face, dtype=np.float64)
+        if lf.shape[1] == 2:  # same convention as draw_3d_bounding_box: z = 0
+            lf = np.hstack([lf, np.zeros((len(lf), 1))])
+        entry = {"bottom": lf.tolist(), "height": float(h)}
+        if color is not None:
+            entry["color"] = [float(c) for c in mcolors.to_rgb(color)] if isinstance(color, str) \
+                else [float(c) for c in color]
+        cuboids.append(entry)
+    return {"cuboids": cuboids, "z_up": True}
+
+
+def export_cuboids_json(path, lower_faces, heights, colors=None):
+    """Save cuboids (same arguments as draw_cubes_with_bounding_image) for `python -m viewer3d --scene`."""
+    import json
+    with open(path, "w") as f:
+        json.dump(_cuboids_payload(lower_faces, heights, colors), f)
+    return path
+
+
+def show_cuboids_3d(lower_faces, heights, colors=None, ground_texture=None):
+    """Open the interactive OpenGL viewer on the given cuboids (blocks until closed)."""
+    from viewer3d.app import run_window
+    from viewer3d.scenes import DEFAULT_GROUND_TEXTURE, build_cuboid_scene
+    scene = build_cuboid_scene(_cuboids_payload(lower_faces, heights, colors),
+                               ground_texture=ground_texture or DEFAULT_GROUND_TEXTURE)
+    run_window(scene)

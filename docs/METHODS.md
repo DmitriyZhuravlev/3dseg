@@ -184,3 +184,28 @@ cuboid seeds and contacts in one image.
 
 ![bike triangulation](segments/bike_triangulation_normals.png)
 ![pig normals](segments/pig_normal_integration.png)
+
+## 9. Improved cuboids and triangulation, combined (`video_cuboids.py`)
+
+**Improved cuboids on photos.** The global solve of section 7:
+
+![global cuboids box](segments/cuboids_global_box.png)
+![global cuboids pig](segments/cuboids_global_pig.png)
+
+**The combination.** A triangulated 3D point inside a segment fixes that segment's
+single unknown scale, so points become extra rows in the global cuboid solve. The
+cuboid constraints then carry the measured depth to segments with no texture.
+
+On bike.mp4, fused over frames:
+
+| Model | held-out IoU | held-out point distance |
+|---|---|---|
+| Greedy recursion | 0.753 | 5.9 cm |
+| Global solve | 0.782 | 5.8 cm |
+| Global + points | **0.815** | 4.7 cm |
+| + free space | 0.813 | **3.1 cm** |
+| Carving (reference) | 0.848 | 2.7 cm |
+
+On `box.JPG`, 100 noisy 3D points cut the global solve's error from 4.8 % to 1.9 %.
+
+![cuboids + points](segments/bike_cuboids_points.png)

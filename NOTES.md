@@ -596,3 +596,43 @@ on the table fix the scale, so no ground truth is used.
 A learned single-image normal estimator (DSINE, Omnidata) would provide the normals;
 the 10°-noise rows show that errors of that size do no harm. It needs downloading
 model weights, which were not used here.
+
+## 13. Combining the recursive cuboids with triangulation (`video_cuboids.py`)
+
+**The anchor.** A triangulated 3D point that falls inside a segment fixes that
+segment's one unknown scale directly: its box front must lie at the point's measured
+depth. So each point becomes one more linear row in the global solve of §11.
+
+This works in both directions:
+- triangulation gives exact depth only where there is texture;
+- the cuboid constraints (contact, continuity, seeds) carry that depth to the
+  segments without points.
+
+**On bike.mp4.** Each sampled even frame is solved three ways on the same
+superpixels; each method's boxes are fused by voxel voting, as in §10. The fused
+model of the third method is then cut by free space (§12a). Points come only from
+even-frame tracks, about 40 per frame.
+
+| Fused model | held-out IoU | held-out points: median / ≤5 cm |
+|---|---|---|
+| Recursive cuboids, greedy (original) | 0.753 | 5.9 cm / 43 % |
+| Recursive cuboids, global solve | 0.782 | 5.8 cm / 45 % |
+| **Recursive cuboids, global + triangulated points** | **0.815** | 4.7 cm / 53 % |
+| **… + free space** | 0.813 | **3.1 cm / 69 %** |
+| Carving (reference) | 0.848 | 2.7 cm / 76 % |
+| Carving + free space (reference) | 0.845 | 2.3 cm / 85 % |
+
+Each step helps the cuboid model:
+- the global solve: +0.03 IoU;
+- the points: another +0.03 IoU and 1.1 cm closer;
+- free space: another 1.6 cm closer.
+
+Carving is still best on this video, because it uses every frame's full outline. The
+cuboid route is the one that also applies to a single photo.
+
+**The same anchors on a photo.** On `box.JPG`, true depths with 0.5 % noise stand in
+for triangulated points. The global solve's median error is 4.8 % with no points,
+then 4.1 % with 10 points, 3.1 % with 30 and **1.9 % with 100**.
+
+Images: `docs/segments/cuboids_global_box.png`, `cuboids_global_pig.png` and
+`bike_cuboids_points.png` (`docs/make_cuboids_demo.py`).

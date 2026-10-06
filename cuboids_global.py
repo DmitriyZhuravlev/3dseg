@@ -98,12 +98,15 @@ def main_box_of(cam, image, mask, refine=True):
 
 def global_boxes(cam, image, mask, vps, labels=None, region_size=160, ruler=120, main_box=None, refine_main=True,
                  constraints=("continuity",), seed_weight=10.0, bounds=True, robust=True, huber=0.02, iters=6,
-                 prior_depth=None, prior_weight=0.3, samples_per_pair=40, max_rms=6.0, log=print):
+                 prior_depth=None, prior_weight=0.3, samples_per_pair=40, max_rms=6.0, log=print,
+                 point_anchors=None, point_weight=3.0):
     """Recursive-cuboid constraints solved jointly. Returns dict like segment3d.reconstruct.
 
     constraints: any of "continuity" (depth equality on shared boundaries) and "contact" (the
     original rule: the face pair with the largest 2D overlap is coplanar).
     prior_depth: optional callable uv -> camera depth of a whole-object model (soft prior).
+    point_anchors: optional (uv, depth) of triangulated 3D points seen in this image: a segment
+    containing points gets the scale that puts its front surface at their measured depth.
     """
     s3.SIGNS = s3.axis_signs(cam, vps)
     if labels is None:
@@ -194,6 +197,23 @@ def global_boxes(cam, image, mask, vps, labels=None, region_size=160, ruler=120,
             if ok.sum() >= 5:
                 r = float(np.median(z[ok] / d[ok]))
                 add({idx[i]: 1.0}, r, prior_weight, "prior")
+
+    if point_anchors is not None and len(point_anchors[0]):
+        puv, pz = (np.asarray(v, float) for v in point_anchors)
+        H, W = labels.shape
+        x, y = np.round(puv[:, 0]).astype(int), np.round(puv[:, 1]).astype(int)
+        ok = (x >= 0) & (x < W) & (y >= 0) & (y < H)
+        lab = np.zeros(len(puv), int)
+        lab[ok] = labels[y[ok], x[ok]]
+        for i, (o, sz, _) in canon.items():
+            sel = lab == i
+            if not sel.any():
+                continue
+            d = front_depth(cam, puv[sel], o, sz)
+            good = np.isfinite(d)
+            if good.any():
+                r = float(np.median(pz[sel][good] / d[good]))
+                add({idx[i]: 1.0}, r, point_weight * min(1.0, good.sum() / 2), "point")
 
     A = np.zeros((len(rows), n))
     for k, coef in enumerate(rows):

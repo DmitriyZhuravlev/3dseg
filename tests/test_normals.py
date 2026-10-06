@@ -57,3 +57,23 @@ def test_triangulation_recovers_a_point():
         track.append((i, tuple(uv[0])))
     pts, view, err, used = vn.triangulate([track], cams)
     assert used == [0] and np.allclose(pts[0], X, atol=1e-6) and err[0] < 1e-6
+
+
+def test_point_anchors_pull_global_cuboids_to_measured_depth():
+    import cv2
+    import cuboids_global as cg
+    root = __import__("os").path.dirname(__import__("os").path.dirname(__import__("os").path.abspath(__file__)))
+    cam = lift3d.default_camera()
+    vps = lift3d.vanishing_points()
+    img = cv2.imread(root + "/box.JPG")
+    mask = lift3d.object_mask(root + "/reference.JPG", root + "/box.JPG")
+    labels, _ = s3.superpixels(img, mask, 300, 200)
+    ys, xs = np.nonzero(labels[::8, ::8] > 0)
+    uv = np.c_[xs * 8, ys * 8].astype(float)
+    z = s3.depth_from_boxes(cam, uv, [lift3d.box_ground_truth(cam)["corners"]])
+    sel = np.random.default_rng(0).choice(np.nonzero(np.isfinite(z))[0], 60, replace=False)
+    kw = dict(labels=labels, constraints=("contact", "continuity"), log=lambda *a: None)
+    e0 = s3.depth_errors(s3.depth_from_boxes(cam, uv, cg.boxes_of(cg.global_boxes(cam, img, mask, vps, **kw))), z)
+    e1 = s3.depth_errors(s3.depth_from_boxes(cam, uv, cg.boxes_of(
+        cg.global_boxes(cam, img, mask, vps, point_anchors=(uv[sel], z[sel]), **kw))), z)
+    assert e1["median_rel"] < e0["median_rel"]

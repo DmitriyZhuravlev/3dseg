@@ -446,3 +446,36 @@ The geometry is replaced with the calibrated camera from `lift3d.py`.
 - Free (not axis-aligned) patch planes for curved objects.
 - Combine the round model as anchors with segment-level detail.
 - Test on multi-part objects.
+
+## 10. The original recursive box method on video (`video_segments.py`)
+
+This reuses the bike.mp4 solution from section 7:
+- the calibrated camera;
+- each frame's pose (including lean);
+- the carved model's extent, used as the main box.
+
+**Per frame.** The camera is expressed in the motorcycle's frame, which gives
+the vanishing points of the object axes for that frame. `segment3d.reconstruct`
+then runs unchanged.
+- The original 2D tangent box (`cube.compute_3d_box_from_plain_mask_new`)
+  assumes the X vanishing point lies left of the Y one.
+- When the bike faces the other way, the method works in a frame rotated 90°
+  about the up axis, and the boxes are rotated back.
+- Without this, 30 of 74 sampled frames produced no boxes. 15 frames still
+  produce none: near head-on views, where a vanishing point is at infinity.
+
+**Fusion.** All boxes are in the object frame. A voxel is kept when the boxes
+of at least τ of the frames cover it; τ = 0.3 is chosen on the fusion frames.
+
+**Held-out silhouette IoU (74 odd frames)**
+
+| Model | held-out IoU |
+|---|---|
+| One frame | 0.513 |
+| Fused, before the rotation fix (28 frames) | 0.723 |
+| **Fused, 59 frames** | **0.765** |
+| Carving | 0.848 |
+
+Reproduce with:
+
+    python video_segments.py --video bike.mp4 --background background.png --out docs/video3d

@@ -47,3 +47,20 @@ def test_depth_errors_and_box_depth(cam):
     assert np.isfinite(z).all()
     e = s3.depth_errors(z, z)
     assert e["median_rel"] == 0.0 and e["within_1pct"] == 1.0
+
+
+def test_video_working_frame_orders_vps_and_maps_boxes_back():
+    import video_segments as vs
+    K = np.array([[800.0, 0, 480], [0, 800, 270], [0, 0, 1]])
+    R = np.array([[1.0, 0, 0], [0, 0, -1], [0, 1, 0]])          # looking along +Y, image y down
+    cam = lift3d.Camera(K, R, np.array([0.0, -8.0, 1.5]))
+    for yaw in (0.4, 0.4 + np.pi / 2, 0.4 + np.pi, -1.2):
+        pose = (0.5, 1.0, yaw, 0.0)
+        oc, Q = vs.working_frame(cam, pose)
+        v = vs.object_vps(oc)
+        assert v["left"][0] <= v["right"][0]
+        # the same world point projects identically through both object-frame cameras
+        p_obj = np.array([0.3, -0.2, 0.7])
+        assert np.allclose(oc.project(Q.T @ p_obj)[0], vs.object_camera(cam, pose).project(p_obj)[0], atol=1e-6)
+        lo, hi = vs.rotate_extent(Q, np.array([-1.0, -0.3, 0.0]), np.array([1.0, 0.3, 1.2]))
+        assert np.allclose(hi - lo, np.abs(Q.T) @ np.array([2.0, 0.6, 1.2]))

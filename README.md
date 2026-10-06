@@ -55,6 +55,19 @@ and `video_demos.py`.
 
 ![bike](docs/video3d/bike_pipeline.png)
 
+## Recursive segment boxes (the original method)
+
+`segment3d.py` keeps the repository's original recursive per-segment box
+method, but with the calibrated camera, so every box is metric:
+- **Drift fix:** segments become planar patches. On `box.JPG` this cuts the
+  median depth error from 3.6 % to 1.3 %, below 1.8 % for a Make3D-style MRF.
+- **Video:** `video_segments.py` runs the method on every frame of bike.mp4
+  and fuses the boxes. Held-out IoU rises from 0.51 (one frame) to 0.77.
+
+All methods and demo images are described in [docs/METHODS.md](docs/METHODS.md).
+
+![box methods](docs/segments/box_methods.png)
+
 ## Requirements
 
 Python 3 with the packages in `requirements.txt`:

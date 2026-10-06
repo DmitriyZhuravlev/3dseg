@@ -23,7 +23,8 @@ OUT = "docs/segments"
 def caption(img_bgr_or_pil, text, size=(560, 380)):
     im = img_bgr_or_pil if isinstance(img_bgr_or_pil, Image.Image) else Image.fromarray(cv2.cvtColor(img_bgr_or_pil, cv2.COLOR_BGR2RGB))
     im = im.convert("RGB")
-    im.thumbnail(size)
+    k = min(size[0] / im.width, size[1] / im.height)        # fit the tile, enlarging small crops too
+    im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS)
     t = Image.new("RGB", size, (28, 30, 36))
     t.paste(im, ((size[0] - im.width) // 2, (size[1] - im.height) // 2))
     d = ImageDraw.Draw(t)
@@ -149,7 +150,8 @@ def main():
         pts = grd.centres[sol["occ"].ravel()]
         r = s3.reconstruct(oc, f, m, object_vps(oc), region_size=18, ruler=30, log=lambda *a: None,
                            main_box=rotate_extent(Q, pts.min(0) - grd.size, pts.max(0) + grd.size))
-        ys, xs = np.nonzero(m)
+        n, cc, st, _ = cv2.connectedComponentsWithStats(m.astype(np.uint8))
+        ys, xs = np.nonzero(cc == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA]))     # the bike, not stray blobs
         crop = (max(0, ys.min() - 30), ys.max() + 30, max(0, xs.min() - 60), xs.max() + 60)
         tiles.append(caption(s3.draw_overlay(f, oc, r["labels"], r["cuboids"])[crop[0]:crop[1], crop[2]:crop[3]],
                              f"frame {i}: {len(r['cuboids'])}/{r['n_segments']} segment boxes"))

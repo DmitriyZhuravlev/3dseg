@@ -88,6 +88,16 @@ Each writes `<name>_model.ply` (coloured mesh: MeshLab/Blender), `<name>_metrics
 The building blocks (`video3d.py`) work for any fixed-camera video of a rigid object moving on a flat
 ground with visible painted lines; see NOTES.md section 7.
 
+## Recursive segment methods (photo and video)
+
+```bash
+python segment3d_eval.py                       # box.JPG / synthetic pig: boxes vs planar patches vs Make3D-style
+python video_segments.py --video bike.mp4 --background background.png --out docs/video3d   # needs bike_solution.npz
+PYTHONPATH=. python docs/make_segment_demo.py --eval-dir <dir> --video bike.mp4 --background background.png
+```
+
+See NOTES.md sections 9–10 and docs/METHODS.md.
+
 ## Interactive smoke test without a display
 
 ```bash

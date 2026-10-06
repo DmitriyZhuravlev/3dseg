@@ -125,6 +125,18 @@ pose and the carved model's extent.
    on the fusion frames.
 4. **Evaluation** on held-out (odd) frames by silhouette IoU, as for the carving.
 
-Results: pending the full re-run (this section is updated with the numbers when it finishes).
+**Results on 74 held-out frames:**
+- 59 of 74 sampled frames give boxes, and 3634 of 3738 segments are solved.
+- The remaining frames show the bike almost head-on or from behind. There, one
+  vanishing point goes to infinity and the 2D tangent box degenerates.
+
+| Model | held-out silhouette IoU |
+|---|---|
+| recursive boxes, one frame | 0.513 |
+| **recursive boxes, 59 frames fused (τ = 0.3)** | **0.765** |
+| silhouette carving (section 3), same masks | 0.848 |
+
+Fusion lifts the original method from 0.51 to 0.77. It still trails carving,
+because each frame's boxes overfill the concave parts that the frame cannot see.
 
 ![bike recursive boxes](segments/bike_recursive_boxes.png)

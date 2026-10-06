@@ -190,25 +190,54 @@ def opposite_direction(directions):
     opposites = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
     return {opposites[direction] for direction in directions}
 
+def contour_adjacent_pairs(labels, contour_mask):
+    """
+    All label pairs that is_valid_neighbor_contour() would accept, computed at once.
+
+    Two labels are adjacent if both occur in the (border-clipped) 3x3 window around
+    some contour pixel. Vectorised over contour pixels instead of looping per label
+    pair, which made find_neighbors take hours on full-resolution images.
+
+    Returns:
+        set of (a, b) tuples with a < b.
+    """
+    H, W = labels.shape
+    ys, xs = np.nonzero(contour_mask)
+    padded = np.pad(labels.astype(np.int64), 1, constant_values=-1)  # -1 = outside image
+    window = np.stack([padded[ys + 1 + dy, xs + 1 + dx]
+                       for dy in (-1, 0, 1) for dx in (-1, 0, 1)], axis=1)  # (N, 9)
+    pairs = set()
+    for i in range(9):
+        for j in range(i + 1, 9):
+            a, b = window[:, i], window[:, j]
+            keep = (a != b) & (a >= 0) & (b >= 0)
+            lo, hi = np.minimum(a[keep], b[keep]), np.maximum(a[keep], b[keep])
+            if len(lo):
+                pairs.update(map(tuple, np.unique(np.stack([lo, hi], 1), axis=0).tolist()))
+    return pairs
+
+
 def find_neighbors(labels, contour):
     """
     Identify neighboring segments and their relative positions.
 
     Args:
         labels (np.array): Label mask from SLIC.
+        contour (np.array): Contour mask from slic.getLabelContourMask().
 
     Returns:
-        dict: {label1: {label2: "direction"}}
+        (dict, dict): {label1: {label2: "direction"}}, {label: (y, x) center}
     """
     centers = compute_centers(labels)
     unique_labels = list(centers.keys())
     
     neighbors_dict = {label: {} for label in unique_labels}
+    adjacent = contour_adjacent_pairs(labels, contour)
 
     for i, label1 in enumerate(unique_labels):
         for label2 in unique_labels[i + 1:]:  # Avoid duplicate comparisons
             # if is_valid_neighbor(label1, label2, labels, centers):
-            if is_valid_neighbor_contour(label1, label2, labels, contour):
+            if (min(label1, label2), max(label1, label2)) in adjacent:
                 direction = get_relative_position(centers[label1], centers[label2])
                 neighbors_dict[label1][label2] = direction
                 neighbors_dict[label2][label1] = opposite_direction(direction)

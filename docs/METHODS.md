@@ -140,3 +140,47 @@ Fusion lifts the original method from 0.51 to 0.77. It still trails carving,
 because each frame's boxes overfill the concave parts that the frame cannot see.
 
 ![bike recursive boxes](segments/bike_recursive_boxes.png)
+
+## 7. Improving the recursive cuboids: one global solve (`cuboids_global.py`)
+
+Each segment's 3D box is fixed by its 2D tangent box up to a single scale about the
+camera centre. So the recursion's rules are linear equations in one unknown per segment:
+- shared-face contact;
+- depth continuity across boundaries;
+- seed anchors.
+
+The variant solves them all at once with robust bounded least squares, instead of
+propagating neighbour by neighbour.
+
+| Variant | box.JPG median | pig median |
+|---|---|---|
+| Original greedy recursion | **3.6 %** | 3.0 % |
+| Global (contact + continuity, robust, bounded) | 4.8 % | 2.4 % |
+| Global + whole-object prior | 3.8 % | **2.2 %** |
+| Planar patches (section 5) | **1.3 %** | 4.0 % |
+
+- **Curved objects:** the global solve improves them.
+- **Flat-faced objects:** it is worse there. Planar patches remain the best model for
+  flat faces (NOTES.md section 11).
+
+## 8. Triangulation and 3D normals
+
+**Video (`video_normals.py`).** Feature tracks on bike.mp4 are triangulated in the
+motorcycle's frame (median reprojection error 1.34 px). Normals come from local plane
+fits. Free space between each camera and the points it saw is then removed from the
+carving. On surface points from held-out frames, the median distance drops from
+2.7 cm to 2.3 cm (85 % within 5 cm, from 76 %). Poisson reconstruction from these
+sparse points alone is worse than carving.
+
+**Single image (`normal_integration.py`).** A normal field fixes the gradient of log
+depth, so the shape can be integrated from normals:
+- with exact or 10°-noisy normals, each smooth part comes out within 0.5 %;
+- normals cannot place separate parts relative to each other (head in front of
+  body), so with no extra cue the error is 3.9 %;
+- normals from the silhouette alone give 8 %.
+
+Normals therefore need a placement cue: triangulated points or carving in video, the
+cuboid seeds and contacts in one image.
+
+![bike triangulation](segments/bike_triangulation_normals.png)
+![pig normals](segments/pig_normal_integration.png)

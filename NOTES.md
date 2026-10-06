@@ -479,3 +479,120 @@ of at least τ of the frames cover it; τ = 0.3 is chosen on the fusion frames.
 Reproduce with:
 
     python video_segments.py --video bike.mp4 --background background.png --out docs/video3d
+
+## 11. Improving the recursive cuboids: a global solve (`cuboids_global.py`)
+
+**The key fact.** Once the camera is calibrated, a segment's VP-tangent 2D box fixes its
+3D box up to one number. Every lift is a scaled copy of a canonical lift, scaled about
+the camera centre: `box(s) = C + s (B - C)`. This is verified to 1e-9 m.
+
+So the recursive method has one unknown per segment, and all its constraints are linear
+in those unknowns:
+- **contact:** the face pair chosen by 2D overlap is coplanar, as in the original;
+- **depth continuity** on shared boundaries;
+- **seed anchors** on the main box.
+
+**The variant.** Instead of breadth-first propagation, solve all constraints at once:
+- robust least squares (IRLS with a Huber loss);
+- each scale bounded so its box stays inside the main box.
+
+**Per-pixel depth error against 3D ground truth** (`python cuboids_global.py --eval-dir <segeval>`):
+
+| Variant | box.JPG median / ≤3 % | synthetic pig median / ≤3 % |
+|---|---|---|
+| Original recursive boxes (greedy) | **3.6 % / 46 %** | 3.0 % / 49 % |
+| Global: contact only | 4.5 % / 36 % | 2.7 % / 56 % |
+| Global: continuity only | 4.8 % / 35 % | 2.3 % / 61 % |
+| Global: contact + continuity | 4.8 % / 35 % | 2.4 % / 61 % |
+| — no robust loss | 4.9 % / 34 % | 2.7 % / 54 % |
+| — no main-box bounds | 4.3 % / 34 % | 9.2 % / 34 % |
+| — silhouette-only main box | 5.9 % / 28 % | 3.2 % / 47 % |
+| — smaller segments (100 px) | 5.3 % / 32 % | 3.4 % / 44 % |
+| — plus a whole-object prior (`lift3d` model depth) | 3.8 % / 45 % | **2.2 % / 62 %** |
+| Recursive planar patches (§9) | **1.3 % / 84 %** | 4.0 % / 40 % |
+| `lift3d` whole-object model | 0.5 % / 100 % | 2.0 % / 68 % |
+
+**Reading the results.**
+- **Curved object (pig): the global solve helps** (3.0 % → 2.3 %). The robust loss
+  and the main-box bounds are both needed.
+- **Flat-faced box: it is worse** (3.6 % → 4.8 %). Each segment is a solid box whose
+  depth comes from its 2D extent. Continuity and contact then pull neighbouring solids
+  to the same depth, which flattens the box's faces into a wrong compromise. The
+  planar patches (§9) remain the right model for flat faces.
+- **No variant beats the whole-object models** on these single-part objects.
+- **Choosing a variant:** planar patches for flat-faced objects, the global box solve
+  for curved ones.
+
+## 12. Triangulation, 3D normals and shape from normals
+
+### 12a. Video: triangulation in the object frame (`video_normals.py`, bike.mp4)
+
+**Setup.** In the motorcycle's frame, the fixed camera becomes a moving camera, with
+the poses known from §7. So feature tracks can be triangulated in metres with no
+further unknowns.
+
+**Tracks.** KLT tracks inside the mask, with a forward-backward check. Even and odd
+frames are tracked separately; odd frames are held out.
+- Even frames: 1777 tracks; 634 triangulated (baseline ≥ 3°, reprojection ≤ 2.5 px);
+  457 lie near the carved hull.
+- Median reprojection error: **1.34 px**, so the §7 poses are good enough for
+  triangulation.
+
+**Normals.** A local plane fit (PCA, 16 neighbours), oriented towards the cameras
+that saw each point.
+
+**Models**, scored on points triangulated only from the held-out odd frames
+(distance to the surface) and on held-out silhouette IoU:
+
+| Model | held-out points: median distance / ≤5 cm | held-out IoU |
+|---|---|---|
+| Carving (silhouettes only, §7) | 2.7 cm / 76 % | **0.848** |
+| Poisson from triangulated points + PCA normals | 3.1 cm / 70 % | 0.747 |
+| Poisson from triangulated + carved-surface oriented points | 2.9 cm / 79 % | 0.694 |
+| **Carving + free space from triangulated points** | **2.3 cm / 85 %** | 0.845 |
+
+- **Free-space carving.** If a camera saw a point, the voxels between the camera and
+  that point are empty. This removes 8421 voxels that silhouettes cannot remove
+  (concavities) and moves the model closer to independently measured surface points.
+- **Poisson from these sparse points alone** is worse. 457 points are too few for a
+  surface, and the textureless parts (tyres, black engine) have no tracks.
+
+### 12b. Single image: shape from normals (`normal_integration.py`, synthetic pig)
+
+**Integration.** A normal field fixes the gradient of log depth:
+
+    d log z / du = -n_x / (n · (u - cx, v - cy, f))
+
+Poisson-type least squares then gives the shape up to scale. The lowest object pixels
+on the table fix the scale, so no ground truth is used.
+
+| Normals | depth error median / ≤3 % |
+|---|---|
+| Exact normals of the true surface | 3.9 % / 40 % |
+| Exact + 5° noise | 3.8 % / 41 % |
+| Exact + 10° noise | 3.9 % / 41 % |
+| Silhouette normals (image only: exact on the outline, harmonic inside) | 8.2 % / 38 % |
+| Exact normals, plain least squares | 3.9 % / 40 % |
+| **Exact or 10°-noisy normals, true discontinuities, each part placed at its true depth (oracle)** | **0.5 % / 93–99 %** |
+
+**Reading the results.**
+- **Shape from normals is accurate and robust to noise (0.5 %),** but only within
+  each smooth part. Normals carry no information across a depth discontinuity, here
+  where the head occludes the body.
+- **So two things are missing:**
+  - finding the discontinuities: robust (IRLS) integration and cutting at grazing
+    normals did not find them reliably;
+  - placing the separated parts relative to each other.
+- **Integrating within superpixels**, then solving one depth offset per segment
+  (as in §11), also did not beat 2–3 %.
+- **Silhouette normals alone are too crude** (8 %): they only reproduce an inflated
+  round shape.
+
+**Where normals pay off.** Combined with something that places the parts:
+- in video: triangulated points or carving (12a);
+- in one image: the cuboid seeds and contacts. Each segment would get a shape from
+  normals, and the global solve (§11) would place the segments.
+
+A learned single-image normal estimator (DSINE, Omnidata) would provide the normals;
+the 10°-noise rows show that errors of that size do no harm. It needs downloading
+model weights, which were not used here.

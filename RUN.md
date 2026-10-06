@@ -94,9 +94,14 @@ ground with visible painted lines; see NOTES.md section 7.
 python segment3d_eval.py                       # box.JPG / synthetic pig: boxes vs planar patches vs Make3D-style
 python video_segments.py --video bike.mp4 --background background.png --out docs/video3d   # needs bike_solution.npz
 PYTHONPATH=. python docs/make_segment_demo.py --eval-dir <dir> --video bike.mp4 --background background.png
+
+python cuboids_global.py --eval-dir <dir>      # global-solve variants of the recursive cuboids
+python video_normals.py --video bike.mp4 --background background.png --out <dir>   # triangulation + normals (needs open3d)
+python normal_integration.py --eval-dir <dir>  # shape from normals on the synthetic pig
+PYTHONPATH=.:docs python docs/make_normals_demo.py --eval-dir <dir> --normals-dir <dir> --video bike.mp4 --background background.png
 ```
 
-See NOTES.md sections 9–10 and docs/METHODS.md.
+See NOTES.md sections 9–12 and docs/METHODS.md.
 
 ## Interactive smoke test without a display
 

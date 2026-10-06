@@ -1,0 +1,40 @@
+{
+ "fit_tracks": 1777,
+ "fit_triangulated": 634,
+ "fit_kept_near_hull": 457,
+ "fit_reproj_rms_median_px": 1.3391782102405687,
+ "held_tracks": 1775,
+ "held_triangulated": 629,
+ "held_kept_near_hull": 472,
+ "held_reproj_rms_median_px": 1.38250259742993,
+ "free_space_voxels_removed": 12501,
+ "carving (silhouettes only)": {
+  "held_out_point_distance_median_cm": 2.7182600498199463,
+  "held_out_points_within_2cm": 0.3728813559322034,
+  "held_out_points_within_5cm": 0.7627118644067796,
+  "held_out_silhouette_iou": 0.8482527452025849,
+  "voxels": 68614
+ },
+ "Poisson from triangulated points + PCA normals": {
+  "held_out_point_distance_median_cm": 3.0766210556030273,
+  "held_out_points_within_2cm": 0.3622881355932203,
+  "held_out_points_within_5cm": 0.6970338983050848,
+  "held_out_silhouette_iou": 0.7472037446349727,
+  "voxels": 55929
+ },
+ "Poisson from triangulated + carved-surface oriented points": {
+  "held_out_point_distance_median_cm": 2.857788562774658,
+  "held_out_points_within_2cm": 0.3877118644067797,
+  "held_out_points_within_5cm": 0.7944915254237288,
+  "held_out_silhouette_iou": 0.6937146886394074,
+  "voxels": 70043
+ },
+ "carving + free-space from triangulated points": {
+  "held_out_point_distance_median_cm": 2.3169445991516113,
+  "held_out_points_within_2cm": 0.4258474576271186,
+  "held_out_points_within_5cm": 0.8516949152542372,
+  "held_out_silhouette_iou": 0.8449269844045222,
+  "voxels": 60193
+ },
+ "seconds": 62
+}

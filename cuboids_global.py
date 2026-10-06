@@ -169,7 +169,7 @@ def global_boxes(cam, image, mask, vps, labels=None, region_size=160, ruler=120,
                 m = (a + b) / 2
                 add({idx[i]: a / m, idx[j]: -b / m}, 0.0, min(1.0, ok.sum() / 10), "continuity")
         if "contact" in constraints:
-            (oi, szi, c2i), (oj, szj, c2j) = canon[i], canon[j]
+            (oi, szi, c2i), (oj, szj, _) = canon[i], canon[j]
             best = None
             for axis in range(3):
                 for side in (0, 1):

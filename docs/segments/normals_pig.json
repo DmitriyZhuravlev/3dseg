@@ -1,0 +1,121 @@
+{
+ "exact normals": {
+  "ground_anchored": {
+   "median_rel": 0.03867029137693634,
+   "mean_rel": 0.038773665673686675,
+   "within_1pct": 0.028292057385589486,
+   "within_3pct": 0.4040234030616334,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.02908130175398601,
+   "mean_rel": 0.03239770886198478,
+   "within_1pct": 0.2807565921295183,
+   "within_3pct": 0.503326120060912,
+   "coverage": 1.0
+  },
+  "scale_error": -0.03867029137774236
+ },
+ "exact normals + 5 deg noise": {
+  "ground_anchored": {
+   "median_rel": 0.03809941375867576,
+   "mean_rel": 0.03800033941515348,
+   "within_1pct": 0.024084315139857336,
+   "within_3pct": 0.40690871203013546,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.027010236994829313,
+   "mean_rel": 0.031729377353962925,
+   "within_1pct": 0.29285886030295744,
+   "within_3pct": 0.511220645988619,
+   "coverage": 1.0
+  },
+  "scale_error": -0.0380964857995848
+ },
+ "exact normals + 10 deg noise": {
+  "ground_anchored": {
+   "median_rel": 0.03896516371596806,
+   "mean_rel": 0.036554518869765795,
+   "within_1pct": 0.026769255429991184,
+   "within_3pct": 0.4057866474312735,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.02021195699331744,
+   "mean_rel": 0.029976141394392322,
+   "within_1pct": 0.3439929470225214,
+   "within_3pct": 0.522561513184259,
+   "coverage": 1.0
+  },
+  "scale_error": -0.038962860257084064
+ },
+ "silhouette normals (image only)": {
+  "ground_anchored": {
+   "median_rel": 0.08152763669221838,
+   "mean_rel": 0.0811103750889755,
+   "within_1pct": 0.24176484731906708,
+   "within_3pct": 0.3777350324597259,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.07315046397908603,
+   "mean_rel": 0.06355909225689246,
+   "within_1pct": 0.10399134407309449,
+   "within_3pct": 0.2608399454997195,
+   "coverage": 1.0
+  },
+  "scale_error": -0.08152763669319851
+ },
+ "exact normals, plain least squares": {
+  "ground_anchored": {
+   "median_rel": 0.03882336851119722,
+   "mean_rel": 0.03881000707924,
+   "within_1pct": 0.03113729261841789,
+   "within_3pct": 0.40426384547567523,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.029429883084583032,
+   "mean_rel": 0.03242055793147621,
+   "within_1pct": 0.2801554860944137,
+   "within_3pct": 0.5019235393123347,
+   "coverage": 1.0
+  },
+  "scale_error": -0.03882336851161772
+ },
+ "exact normals, true discontinuities, parts placed at true depth (oracle)": {
+  "ground_anchored": {
+   "median_rel": 0.005140420670057995,
+   "mean_rel": 0.008613999759448685,
+   "within_1pct": 0.7073014346397372,
+   "within_3pct": 0.9264646950388715,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.005140420670057995,
+   "mean_rel": 0.008613999759448685,
+   "within_1pct": 0.7073014346397372,
+   "within_3pct": 0.9264646950388715,
+   "coverage": 1.0
+  },
+  "scale_error": 0.0
+ },
+ "exact normals + 10 deg noise, true discontinuities, parts placed (oracle)": {
+  "ground_anchored": {
+   "median_rel": 0.005108008498031251,
+   "mean_rel": 0.007560477104355493,
+   "within_1pct": 0.7488178247976276,
+   "within_3pct": 0.9913440730944939,
+   "coverage": 1.0
+  },
+  "best_scale": {
+   "median_rel": 0.005108008498031251,
+   "mean_rel": 0.007560477104355493,
+   "within_1pct": 0.7488178247976276,
+   "within_3pct": 0.9913440730944939,
+   "coverage": 1.0
+  },
+  "scale_error": 0.0
+ }
+}

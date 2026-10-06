@@ -77,10 +77,10 @@ def tangent_box_2d(mask, vps):
     cv2.polylines(outline, [hull], True, 1, 1)
     try:
         lo, up, _ = compute_3d_box_from_plain_mask_new(outline > 0, vps["vertical"], vps["left"], vps["right"])
+        pts = np.vstack([np.asarray(lo, float), np.asarray(up, float)])
     except Exception:
         return None
-    pts = np.vstack([lo, up]).astype(float)
-    return pts if np.isfinite(pts).all() else None
+    return pts if pts.shape == (8, 2) and np.isfinite(pts).all() else None
 
 
 # ---------------------------------------------------------------------------
@@ -194,8 +194,17 @@ def extreme_points(mask, vps):
     hull = cv2.convexHull(max(cs, key=len))
     outline = np.zeros(mask.shape, np.uint8)
     cv2.polylines(outline, [hull], True, 1, 1)
-    _, _, ext = compute_3d_box_from_plain_mask_new(outline > 0, vps["vertical"], vps["left"], vps["right"])
-    return np.asarray(ext, float)
+    try:
+        _, _, ext = compute_3d_box_from_plain_mask_new(outline > 0, vps["vertical"], vps["left"], vps["right"])
+        ext = np.asarray([np.asarray(e, float).ravel()[:2] for e in ext], float)
+        if ext.shape == (6, 2) and np.isfinite(ext).all():
+            return ext
+    except Exception:
+        pass
+    # degenerate tangent geometry: fall back to the lowest, highest, leftmost and rightmost points
+    ys, xs = np.nonzero(mask)
+    return np.array([[xs[np.argmax(ys)], ys.max()], [xs[np.argmin(ys)], ys.min()],
+                     [xs.min(), ys[np.argmin(xs)]], [xs.max(), ys[np.argmax(xs)]]], float)
 
 
 def segment_at(labels, p, r=25):

@@ -122,7 +122,7 @@ def test_flow_heading_and_footprint_beat_the_track_on_an_arc():
     truth = b.trajectory("arc")
     frames, masks = b.render(cam, truth, b.ground_image(cam))
     track, _ = v3.initial_poses(cam, masks, b.FPS)
-    flow, _ = v3.initial_poses(cam, masks, b.FPS, frames=frames)
+    flow, _ = v3.initial_poses(cam, masks, b.FPS, frames=frames, footprint="contacts")
     err = lambda p: np.median(np.abs(np.angle(np.exp(1j * (p[:, 2] - truth[:, 2])))))
     assert err(flow) < math.radians(4) and err(flow) < err(track)
     # the footprint centre is the box centre, not its nearest point

@@ -27,7 +27,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video3d")
 EDGES = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
 METHODS = [("true pose", (0, 200, 0), "tab:green"),
            ("track (before)", (40, 40, 230), "tab:red"),
-           ("flow + contacts (default)", (230, 120, 0), "tab:blue"),
+           ("flow + contacts", (230, 120, 0), "tab:blue"),
            ("flow + closed form", (0, 150, 255), "tab:orange")]
 
 
@@ -48,7 +48,7 @@ def run(name, cam, gimg):
     frames, masks = b.render(cam, truth, gimg)
     est = [truth,
            v3.initial_poses(cam, masks, b.FPS)[0],
-           v3.initial_poses(cam, masks, b.FPS, frames=frames)[0],
+           v3.initial_poses(cam, masks, b.FPS, frames=frames, footprint="contacts")[0],
            v3.initial_poses(cam, masks, b.FPS, frames=frames, footprint="closed")[0]]
     return truth, frames, masks, est
 

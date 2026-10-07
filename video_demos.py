@@ -213,8 +213,8 @@ def contour_tile(frame_bgr, mask, model_sil, text):
 # ---------------------------------------------------------------------------
 # Pipelines
 # ---------------------------------------------------------------------------
-def run_bike(video, out, log=print):
-    t0 = time.time()
+def bike_setup(video):
+    """Frames at working scale, fps, background and calibrated camera for bike.mp4."""
     s = BIKE["scale"]
     frames, idx, fps = v3.read_frames(video, scale=s, step=1)
     full_bg = None
@@ -233,6 +233,12 @@ def run_bike(video, out, log=print):
     cam = v3.ground_camera(BIKE["focal_half"], (W, H), vp_full * s)
     p1, p2 = (np.array(p) * s for p in BIKE["stall_points_full"])
     cam = v3.scale_camera_to(cam, p1, p2, BIKE["stall_width"])
+    return frames, fps, bg, cam, vp_full
+
+
+def run_bike(video, out, log=print, init="flow"):
+    t0 = time.time()
+    frames, fps, bg, cam, vp_full = bike_setup(video)
     log(f"camera: VP {np.round(vp_full, 1)} (full res), height {cam.C[2]:.2f} m  [{time.time() - t0:.0f}s]")
 
     # stage 1: filled silhouettes, every 2nd frame -> robust poses
@@ -240,7 +246,7 @@ def run_bike(video, out, log=print):
     Mf = v3.object_masks(frames[::step], bg)
     T = len(Mf)
     train = list(range(0, T, 2))
-    poses, _ = v3.initial_poses(cam, Mf, fps, step=step, frames=frames[::step])
+    poses, _ = v3.initial_poses(cam, Mf, fps, step=step, frames=frames[::step] if init == "flow" else None)
     grid = v3.VoxelGrid((-1.3, -0.7, 0.0), (1.3, 0.7, 1.9), 0.03)
     for it in range(3):
         frac, seen = v3.carve(cam, Mf, poses, grid, train, margin_px=1)
@@ -406,10 +412,12 @@ def main():
     ap.add_argument("which", choices=["bike", "horse", "yeop", "air", "monument", "bender", "por"])
     ap.add_argument("--video", required=True)
     ap.add_argument("--out", default="out")
+    ap.add_argument("--init", choices=["flow", "track"], default="flow",
+                    help="bike: initial heading from optical flow (default) or from the track")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     if a.which == "bike":
-        run_bike(a.video, a.out)
+        run_bike(a.video, a.out, init=a.init)
     elif a.which == "horse":
         run_horse(a.video, a.out)
     elif a.which == "yeop":

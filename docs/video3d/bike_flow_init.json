@@ -1,0 +1,36 @@
+{
+ "frames_used": 589,
+ "step": 2,
+ "track (before)": {
+  "held_out_iou_init_only": 0.4048977446965086,
+  "voxels": 3920,
+  "heading_diff_to_refined_deg_median": 9.390552561468478,
+  "heading_diff_to_refined_deg_p90": 32.62003300631323
+ },
+ "flow (now)": {
+  "held_out_iou_init_only": 0.4041550081105388,
+  "voxels": 3903,
+  "heading_diff_to_refined_deg_median": 11.037632881852831,
+  "heading_diff_to_refined_deg_p90": 24.615966936775656
+ },
+ "flow + contacts": {
+  "held_out_iou_init_only": 0.3092636700596489,
+  "voxels": 4687,
+  "heading_diff_to_refined_deg_median": 11.037632881852831,
+  "heading_diff_to_refined_deg_p90": 24.615966936775656
+ },
+ "flow + closed form": {
+  "held_out_iou_init_only": 0.3092908437897514,
+  "voxels": 4688,
+  "heading_diff_to_refined_deg_median": 11.037632881852831,
+  "heading_diff_to_refined_deg_p90": 24.615966936775656
+ },
+ "contact_dims_m": [
+  2.441655779730228,
+  1.7908146005486798
+ ],
+ "full_pipeline_held_out_iou": {
+  "track init": 0.8125820424123865,
+  "flow init": 0.8129593960643285
+ }
+}

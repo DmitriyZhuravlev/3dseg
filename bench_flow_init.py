@@ -135,7 +135,8 @@ def main(out="docs/video3d"):
         frames, masks = render(cam, truth, gimg)
         track, _ = v3.initial_poses(cam, masks, FPS)
         variants = dict(track=track,
-                        flow_contacts=v3.initial_poses(cam, masks, FPS, frames=frames)[0],
+                        flow_bottom=v3.initial_poses(cam, masks, FPS, frames=frames)[0],
+                        flow_contacts=v3.initial_poses(cam, masks, FPS, frames=frames, footprint="contacts")[0],
                         flow_closed=v3.initial_poses(cam, masks, FPS, frames=frames, footprint="closed")[0],
                         flow_closed_true_dims=v3.initial_poses(cam, masks, FPS, frames=frames, footprint="closed",
                                                                dims=DIMS[:2])[0])
@@ -172,7 +173,7 @@ def plot(curves, results, path):
         a.axis("off")
         a = ax[1, j]
         r = results[name]
-        for k in ("track", "flow_contacts", "flow_closed", "flow_closed_true_dims"):
+        for k in ("track", "flow_bottom", "flow_contacts", "flow_closed", "flow_closed_true_dims"):
             a.bar(k.replace("flow_", "").replace("_", "\n"), r[k]["held_out_iou"])
             a.text(k.replace("flow_", "").replace("_", "\n"), r[k]["held_out_iou"] + 0.005,
                    f"{r[k]['held_out_iou']:.3f}\n{r[k]['pos_err_m_median'] * 100:.0f} cm", ha="center", fontsize=8)

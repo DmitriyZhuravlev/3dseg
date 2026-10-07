@@ -160,12 +160,13 @@ def pose_matrix(x, y, yaw, lean=0.0):
     return T
 
 
-def _ground_rays_ok(cam, uv):
-    """Pixels whose viewing ray goes down, i.e. meets the ground in front of the camera."""
-    return cam.ray(uv)[:, 2] < -1e-6
+def _ground_rays_ok(cam, uv, min_down=1e-6):
+    """Pixels whose viewing ray goes down (z component < -min_down), i.e. meets the
+    ground in front of the camera."""
+    return cam.ray(uv)[:, 2] < -min_down
 
 
-def flow_headings(cam, frames, masks, min_flow=0.3, pad=20):
+def flow_headings(cam, frames, masks, min_flow=0.3, pad=20, min_down=0.05):
     """Per-frame heading from the object's dense optical flow, mapped onto the ground.
 
     The direction of motion is read from the flow, not from differencing a track
@@ -173,7 +174,11 @@ def flow_headings(cam, frames, masks, min_flow=0.3, pad=20):
     Clustering", SpringerLifting/). Every object pixel and its flow end point are
     back-projected onto z=0. For a translating rigid object this keeps the direction
     of travel for any point height: the back-projection is a homothety from the
-    camera, which scales the displacement but does not turn it. Returns
+    camera, which scales the displacement but does not turn it. The scale grows
+    without bound for points near camera height (rays near the horizon), where a
+    pixel of flow error becomes metres on the ground, so rays less than min_down
+    (about 3 deg) below the horizon are left out, and each pixel's ground direction
+    is weighted by its ground displacement capped at twice the median. Returns
     (yaw[T], confidence[T]); yaw is NaN where the flow says nothing (object still or
     missing), confidence is the length of the weighted mean unit vector (1 = all
     pixels agree).
@@ -196,13 +201,14 @@ def flow_headings(cam, frames, masks, min_flow=0.3, pad=20):
             continue
         p = np.column_stack([xs, ys])[keep].astype(float)
         q = p + u[keep]
-        ok = _ground_rays_ok(cam, p) & _ground_rays_ok(cam, q)
+        ok = _ground_rays_ok(cam, p, min_down) & _ground_rays_ok(cam, q, min_down)
         if ok.sum() < 30:
             continue
         d = (cam.backproject_to_plane(q[ok], 0.0) - cam.backproject_to_plane(p[ok], 0.0))[:, :2]
         n = np.linalg.norm(d, axis=1)
         unit = d / np.maximum(n, 1e-9)[:, None]
-        mean = (unit * n[:, None]).sum(0) / n.sum()       # magnitude-weighted circular mean
+        w = np.minimum(n, 2.0 * np.median(n))               # ground displacement, capped against outliers
+        mean = (unit * w[:, None]).sum(0) / w.sum()       # weighted circular mean
         yaw[t], conf[t] = math.atan2(mean[1], mean[0]), np.linalg.norm(mean)
     if T > 1:
         yaw[-1], conf[-1] = yaw[-2], conf[-2]
@@ -300,22 +306,23 @@ def footprint_closed_form(cam, mask, yaw, dims, side_px=20):
     return best
 
 
-def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None, footprint="contacts", max_fit_err=0.2):
+def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None, footprint="bottom",
+                  max_fit_err=0.2):
     """Ground track, heading and lean for every frame.
 
-    Without frames: track from the silhouettes' bottom-centre and heading from its
-    direction of travel. With frames: heading from the dense optical flow
-    (flow_headings) and position from the footprint centre for that heading, so the track is the object's centre rather than its nearest point, and the heading
-    is defined from the first frame on, for slow objects too. The footprint comes from
-    the ground contacts (footprint_centre, default) or, with footprint="closed", from
-    the article's closed form (footprint_closed_form, needs dims = (length, width);
-    without dims they are the median size measured by footprint_centre). The closed
-    form is more accurate with an exact heading but more sensitive to heading error,
-    so with flow headings it is not better (bench_flow_init.py, NOTES section 8). As in the article, a closed-form fit
-    is accepted only if its error is small (here below max_fit_err of the expected
-    second side); other frames, mostly near side-on views where the construction
-    degenerates, fall back to footprint_centre. Lean always comes from the turn of the smoothed
-    track.
+    Heading: without frames, the direction of travel of the smoothed track; with
+    frames, the dense optical flow (flow_headings), which is defined from the first
+    frame on and for slow objects too.
+    Position (footprint): "bottom" (default) is the silhouette's bottom-centre point;
+    "contacts" the centre of the footprint rectangle from the ground contacts for the
+    flow heading (footprint_centre); "closed" the article's closed form
+    (footprint_closed_form, dims = (length, width), default the median contact size),
+    accepted, as in the article, only below a small fitting error (max_fit_err of the
+    expected second side), else the contacts. The footprint options need frames.
+    On rendered boxes the footprint centre is much closer to the true centre, but on
+    bike.mp4 it jumps between frames (shadow, thin wheels), so "bottom" stays the
+    default (NOTES section 8).
+    Lean always comes from the turn of the smoothed track.
     """
     T = len(masks)
     tt = np.arange(T)
@@ -326,17 +333,30 @@ def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None
         fy, conf = flow_headings(cam, frames, masks)
         good = ~np.isnan(fy) & (conf > 0.5)
         if good.sum() >= max(3, T // 4):
-            uw = np.unwrap(fy[good])
-            flow_yaw = gaussian_filter1d(np.interp(tt, tt[good], uw), max(1.0, sig / 2))
+            # smooth the direction as a unit vector weighted by agreement: averaging
+            # angles directly would need unwrapping, which a single outlier frame (or a
+            # gap) turns into a permanent +-360 deg jump
+            w = np.where(good, conf, 0.0)
+            vec = np.column_stack([np.cos(np.nan_to_num(fy)), np.sin(np.nan_to_num(fy))]) * w[:, None]
+            s = max(1.0, sig / 2)
+            sm = np.stack([gaussian_filter1d(vec[:, k], s) for k in (0, 1)], 1)
+            wn = gaussian_filter1d(w, s)
+            ang = np.arctan2(sm[:, 1], sm[:, 0])
+            weak = wn < 0.05                          # long gap: interpolate from frames with flow
+            if weak.any() and (~weak).sum() >= 2:
+                uw = np.unwrap(ang[~weak])
+                ang[weak] = np.interp(tt[weak], tt[~weak], uw)
+            flow_yaw = np.unwrap(ang)
     pts = np.full((T, 2), np.nan)
     ground = np.full((T, 3), np.nan)
-    if flow_yaw is not None:
+    use_fp = flow_yaw is not None and footprint in ("contacts", "closed")
+    if use_fp:
         contacts = [footprint_centre(cam, m, flow_yaw[t]) for t, m in enumerate(masks)]
         if footprint == "closed" and dims is None:
             sizes = np.array([c[1] for c in contacts if c is not None])
             dims = tuple(np.median(sizes, 0)) if len(sizes) else None
     for t, m in enumerate(masks):
-        if flow_yaw is not None:
+        if use_fp:
             fp = footprint_closed_form(cam, m, flow_yaw[t], dims) if footprint == "closed" and dims else None
             if fp is None or fp[1] > max_fit_err * fp[3]:
                 fp = contacts[t]
@@ -349,7 +369,7 @@ def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None
         ybot = ys.max()
         band = xs[ys >= ybot - 3]
         pts[t] = [band.mean(), ybot]
-    if flow_yaw is None:
+    if not use_fp:
         ok = ~np.isnan(pts[:, 0])
         ground[ok] = cam.backproject_to_plane(pts[ok], 0.0)
     ok = ~np.isnan(ground[:, 0])

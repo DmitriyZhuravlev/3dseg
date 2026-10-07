@@ -445,3 +445,36 @@ Demo pictures (`python docs/flow_init_demo.py`):
 ![frames](docs/video3d/flow_init_frames.png)
 ![construction](docs/video3d/flow_init_construction.png)
 ![tracks](docs/video3d/flow_init_tracks.png)
+
+### On bike.mp4 (data/bike.mp4)
+
+`python docs/bike_flow_demo.py --solution out/bike/bike_solution.npz` (pictures
+`docs/video3d/bike_flow_*.png`, numbers `bike_flow_init.json`). Reference = the poses after
+the full pipeline's refinement.
+
+| initial poses | heading vs refined (median / p90) | bike carved from initial poses only, held-out IoU | full pipeline, held-out IoU |
+|---|---|---|---|
+| track (before) | 9.4 / 32.6 deg | 0.405 | 0.8126 |
+| flow heading, bottom-centre position (default now) | 11.0 / 24.6 deg | 0.404 | 0.8130 |
+| flow heading + contact footprint | same | 0.309 | - |
+| flow heading + closed-form footprint | same | 0.309 | - |
+
+- The flow heading is as good as the track heading here (the bike always moves, at a
+  steady speed, so the track has no weakness to fix); fewer large errors (p90 25 vs 33 deg),
+  slightly larger median. End to end the pipeline's pose refinement makes the two
+  starts equivalent (0.8130 vs 0.8126).
+- The footprint position fails on the bike: when it faces the camera, many silhouette
+  columns end at the handlebars or the rider, not on the ground, so "ground contacts"
+  are placed metres behind it (frames 686, 1082 in `bike_flow_frames.png`). That is the
+  article's assumption that the object fills its 2D box like a cuboid; a motorcycle
+  does not. Hence `footprint="bottom"` is the default; "contacts" and "closed" are
+  options for box-like objects (vehicles), where the synthetic benchmark shows the gain.
+- On the rendered boxes, the gain listed above comes from the footprint position; the
+  flow heading alone with the bottom-centre position is no better than the track
+  (`flow_bottom` in `flow_init_benchmark.json`).
+- Two fixes found on real data: flow headings are smoothed as unit vectors (unwrapping
+  noisy per-frame angles produced +-360 deg jumps), and pixels less than ~3 deg below
+  the horizon are left out with the ground-displacement weight capped (the rider's
+  shoulders are at camera height, 1.32 m, where back-projection blows up flow noise).
+- Horse.mp4 is not in data/; the method would need the panning camera's motion removed
+  first (the article assumes a fixed camera).

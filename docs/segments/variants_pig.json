@@ -1,0 +1,90 @@
+{
+ "original recursive boxes (greedy propagation)": {
+  "median_rel": 0.030357922355216043,
+  "mean_rel": 0.03979455983826587,
+  "within_1pct": 0.12830310099344408,
+  "within_3pct": 0.49430881229135665,
+  "coverage": 0.9963532900536988,
+  "solved": "23/23",
+  "seconds": 25.6
+ },
+ "global: contact constraints only": {
+  "median_rel": 0.026722913363445996,
+  "mean_rel": 0.036954431668608734,
+  "within_1pct": 0.17697691255731637,
+  "within_3pct": 0.5608157026787869,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 6.6
+ },
+ "global: continuity constraints only": {
+  "median_rel": 0.02330722817259333,
+  "mean_rel": 0.033841834249418966,
+  "within_1pct": 0.20895342289437696,
+  "within_3pct": 0.6074732523529885,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 5.2
+ },
+ "global: contact + continuity": {
+  "median_rel": 0.023549277500203667,
+  "mean_rel": 0.03404734555071095,
+  "within_1pct": 0.20637921325717964,
+  "within_3pct": 0.6095647976832114,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 6.5
+ },
+ "global: contact + continuity, no robust loss": {
+  "median_rel": 0.027298940211466394,
+  "mean_rel": 0.03744802604390818,
+  "within_1pct": 0.18011423055265063,
+  "within_3pct": 0.539980693427721,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 6.8
+ },
+ "global: contact + continuity, no main-box bounds": {
+  "median_rel": 0.09154910204649877,
+  "mean_rel": 0.09515294369078799,
+  "within_1pct": 0.16253720537366262,
+  "within_3pct": 0.3428525460542193,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 6.9
+ },
+ "global: contact + continuity, silhouette-only main box": {
+  "median_rel": 0.03195351176890525,
+  "mean_rel": 0.04081056677506678,
+  "within_1pct": 0.1892044083340037,
+  "within_3pct": 0.470839031453624,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 4.2
+ },
+ "global: contact + continuity, smaller segments (100 px)": {
+  "median_rel": 0.034216738299791355,
+  "mean_rel": 0.04051558111873511,
+  "within_1pct": 0.15542935395521185,
+  "within_3pct": 0.4430884485258579,
+  "coverage": 0.9949507093051214,
+  "solved": "36/36",
+  "seconds": 16.9
+ },
+ "global: contact + continuity + whole-object prior": {
+  "median_rel": 0.022185212305339923,
+  "mean_rel": 0.032867339531126215,
+  "within_1pct": 0.22451934679430455,
+  "within_3pct": 0.6181320891320087,
+  "coverage": 0.9963132163180252,
+  "solved": "23/23",
+  "seconds": 7.8
+ },
+ "lift3d whole-object round model (reference)": {
+  "median_rel": 0.019986519774030313,
+  "mean_rel": 0.021796321762500494,
+  "within_1pct": 0.2724194913546411,
+  "within_3pct": 0.6806255289992342,
+  "coverage": 0.9942694557986695
+ }
+}

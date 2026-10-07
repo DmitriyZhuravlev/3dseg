@@ -321,7 +321,7 @@ def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None
     expected second side), else the contacts. The footprint options need frames.
     On rendered boxes the footprint centre is much closer to the true centre, but on
     bike.mp4 it jumps between frames (shadow, thin wheels), so "bottom" stays the
-    default (NOTES section 8).
+    default (NOTES section 14).
     Lean always comes from the turn of the smoothed track.
     """
     T = len(masks)

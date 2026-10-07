@@ -1,0 +1,825 @@
+{
+ "frames_tried": 25,
+ "frames_with_cuboids": 21,
+ "summary": {
+  "cone": {
+   "held_out_iou_median": 0.4528925594934593,
+   "held_out_iou_best": 0.4995244392903567,
+   "point_distance_cm_median": 13.94060230255127
+  },
+  "greedy": {
+   "held_out_iou_median": 0.08976518165000333,
+   "held_out_iou_best": 0.5971653758996469,
+   "point_distance_cm_median": 46.64876365661621
+  },
+  "global": {
+   "held_out_iou_median": 0.33733565101571567,
+   "held_out_iou_best": 0.6337095146523614,
+   "point_distance_cm_median": 37.96430969238281
+  },
+  "global, class-size prior": {
+   "held_out_iou_median": 0.5249762154884213,
+   "held_out_iou_best": 0.6982269788573098,
+   "point_distance_cm_median": 6.983273506164551
+  },
+  "global, carved extent": {
+   "held_out_iou_median": 0.5918586215654795,
+   "held_out_iou_best": 0.7209306658975795,
+   "point_distance_cm_median": 6.410667419433594
+  },
+  "global \u2229 cone": {
+   "held_out_iou_median": 0.3363402923204173,
+   "held_out_iou_best": 0.639808541387952,
+   "point_distance_cm_median": 37.96430969238281
+  },
+  "global, class-size prior \u2229 cone": {
+   "held_out_iou_median": 0.5365527542886034,
+   "held_out_iou_best": 0.6996176008146717,
+   "point_distance_cm_median": 6.531525611877441
+  },
+  "carving, all frames (reference)": {
+   "held_out_iou": 0.8484831578041276,
+   "held_out_point_distance_median_cm": 2.7743868827819824,
+   "voxels": 68966
+  }
+ },
+ "per_frame": {
+  "0": {
+   "cone": {
+    "held_out_iou": 0.46496806861250783,
+    "held_out_point_distance_median_cm": 17.52549171447754,
+    "voxels": 304723
+   },
+   "greedy": {
+    "held_out_iou": 0.18194805398726988,
+    "held_out_point_distance_median_cm": 51.07120132446289,
+    "voxels": 6502
+   },
+   "global": {
+    "held_out_iou": 0.36610990159453954,
+    "held_out_point_distance_median_cm": 43.82249450683594,
+    "voxels": 14546
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.685544524879097,
+    "held_out_point_distance_median_cm": 4.151993274688721,
+    "voxels": 50393
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.7087052950333497,
+    "held_out_point_distance_median_cm": 4.316962242126465,
+    "voxels": 51697
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.3703187852590155,
+    "held_out_point_distance_median_cm": 43.82249450683594,
+    "voxels": 14289
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.6894603595951447,
+    "held_out_point_distance_median_cm": 4.151993274688721,
+    "voxels": 49759
+   }
+  },
+  "48": {
+   "cone": {
+    "held_out_iou": 0.4700091032788722,
+    "held_out_point_distance_median_cm": 16.7271671295166,
+    "voxels": 308415
+   },
+   "greedy": {
+    "held_out_iou": 0.38083976314168866,
+    "held_out_point_distance_median_cm": 28.2777156829834,
+    "voxels": 20928
+   },
+   "global": {
+    "held_out_iou": 0.48701109771193407,
+    "held_out_point_distance_median_cm": 15.641443252563477,
+    "voxels": 40230
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.693720360219761,
+    "held_out_point_distance_median_cm": 4.859199523925781,
+    "voxels": 63771
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6735473240877857,
+    "held_out_point_distance_median_cm": 5.690608024597168,
+    "voxels": 62298
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.487915569822373,
+    "held_out_point_distance_median_cm": 15.641443252563477,
+    "voxels": 40171
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.6978821435031481,
+    "held_out_point_distance_median_cm": 4.859199523925781,
+    "voxels": 63275
+   }
+  },
+  "96": {
+   "cone": {
+    "held_out_iou": 0.46358523014635433,
+    "held_out_point_distance_median_cm": 15.550875663757324,
+    "voxels": 300703
+   },
+   "greedy": {
+    "held_out_iou": 0.11839585505476978,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 1122
+   },
+   "global": {
+    "held_out_iou": 0.13352584600798645,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 1423
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.5020937453890298,
+    "held_out_point_distance_median_cm": 6.4941487312316895,
+    "voxels": 112798
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.5254777078965684,
+    "held_out_point_distance_median_cm": 5.921346664428711,
+    "voxels": 114863
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.12489157785386602,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 1184
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5204793359310843,
+    "held_out_point_distance_median_cm": 6.317885398864746,
+    "voxels": 107398
+   }
+  },
+  "144": {
+   "cone": {
+    "held_out_iou": 0.47596810039485704,
+    "held_out_point_distance_median_cm": 16.203338623046875,
+    "voxels": 301126
+   },
+   "greedy": {
+    "held_out_iou": 0.4699927632426965,
+    "held_out_point_distance_median_cm": 17.108463287353516,
+    "voxels": 34712
+   },
+   "global": {
+    "held_out_iou": 0.4242679365671643,
+    "held_out_point_distance_median_cm": 24.719682693481445,
+    "voxels": 23892
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.6298786186585871,
+    "held_out_point_distance_median_cm": 8.950324058532715,
+    "voxels": 56424
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6696992270089657,
+    "held_out_point_distance_median_cm": 5.199567794799805,
+    "voxels": 59852
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.4254545649974818,
+    "held_out_point_distance_median_cm": 24.719682693481445,
+    "voxels": 23676
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.6342972820045655,
+    "held_out_point_distance_median_cm": 9.107634544372559,
+    "voxels": 55946
+   }
+  },
+  "192": {
+   "cone": {
+    "held_out_iou": 0.4363030821791229,
+    "held_out_point_distance_median_cm": 17.022186279296875,
+    "voxels": 330925
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.6624702708638749,
+    "held_out_point_distance_median_cm": 4.957548141479492,
+    "voxels": 42005
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6962659853021618,
+    "held_out_point_distance_median_cm": 6.456959247589111,
+    "voxels": 39356
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.671969378134571,
+    "held_out_point_distance_median_cm": 4.957548141479492,
+    "voxels": 41151
+   }
+  },
+  "240": {
+   "cone": {
+    "held_out_iou": 0.424350608458383,
+    "held_out_point_distance_median_cm": 13.155237197875977,
+    "voxels": 292730
+   },
+   "greedy": {
+    "held_out_iou": 0.4404769722145763,
+    "held_out_point_distance_median_cm": 6.151769638061523,
+    "voxels": 115361
+   },
+   "global": {
+    "held_out_iou": 0.09028958528297941,
+    "held_out_point_distance_median_cm": 70.90203857421875,
+    "voxels": 9922
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.4790009126052368,
+    "held_out_point_distance_median_cm": 4.226807594299316,
+    "voxels": 129656
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.46893160100803344,
+    "held_out_point_distance_median_cm": 5.221590995788574,
+    "voxels": 136091
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.08920712879818882,
+    "held_out_point_distance_median_cm": 70.90203857421875,
+    "voxels": 9828
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5189509562729314,
+    "held_out_point_distance_median_cm": 3.9884588718414307,
+    "voxels": 98843
+   }
+  },
+  "384": {
+   "cone": {
+    "held_out_iou": 0.4528925594934593,
+    "held_out_point_distance_median_cm": 11.449586868286133,
+    "voxels": 268948
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.4647888474008056,
+    "held_out_point_distance_median_cm": 6.189220428466797,
+    "voxels": 128390
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.4963630833539407,
+    "held_out_point_distance_median_cm": 5.253284454345703,
+    "voxels": 127626
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5286242222818188,
+    "held_out_point_distance_median_cm": 5.963939189910889,
+    "voxels": 90553
+   }
+  },
+  "432": {
+   "cone": {
+    "held_out_iou": 0.4995244392903567,
+    "held_out_point_distance_median_cm": 14.765203475952148,
+    "voxels": 279258
+   },
+   "greedy": {
+    "held_out_iou": 0.5971653758996469,
+    "held_out_point_distance_median_cm": 9.59381103515625,
+    "voxels": 35334
+   },
+   "global": {
+    "held_out_iou": 0.5031044935247826,
+    "held_out_point_distance_median_cm": 27.42554473876953,
+    "voxels": 28930
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.6982269788573098,
+    "held_out_point_distance_median_cm": 6.347888946533203,
+    "voxels": 41320
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.7209306658975795,
+    "held_out_point_distance_median_cm": 5.132944107055664,
+    "voxels": 41840
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.5032663322597349,
+    "held_out_point_distance_median_cm": 27.42554473876953,
+    "voxels": 28851
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.6996176008146717,
+    "held_out_point_distance_median_cm": 6.46613073348999,
+    "voxels": 40809
+   }
+  },
+  "480": {
+   "cone": {
+    "held_out_iou": 0.4611042271803669,
+    "held_out_point_distance_median_cm": 13.34865951538086,
+    "voxels": 300625
+   },
+   "greedy": {
+    "held_out_iou": 0.4583526856551911,
+    "held_out_point_distance_median_cm": 16.158348083496094,
+    "voxels": 26828
+   },
+   "global": {
+    "held_out_iou": 0.40425206641952044,
+    "held_out_point_distance_median_cm": 35.766807556152344,
+    "voxels": 22568
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.625505789317848,
+    "held_out_point_distance_median_cm": 10.22645378112793,
+    "voxels": 33225
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.658820317504936,
+    "held_out_point_distance_median_cm": 7.080377101898193,
+    "voxels": 36335
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.4079368521700799,
+    "held_out_point_distance_median_cm": 35.766807556152344,
+    "voxels": 22103
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.6236796599527775,
+    "held_out_point_distance_median_cm": 10.22645378112793,
+    "voxels": 32640
+   }
+  },
+  "528": {
+   "cone": {
+    "held_out_iou": 0.44050441492357945,
+    "held_out_point_distance_median_cm": 12.620412826538086,
+    "voxels": 266983
+   },
+   "greedy": {
+    "held_out_iou": 0.08976518165000333,
+    "held_out_point_distance_median_cm": 49.995792388916016,
+    "voxels": 6221
+   },
+   "global": {
+    "held_out_iou": 0.49472058146324777,
+    "held_out_point_distance_median_cm": 6.580445289611816,
+    "voxels": 104398
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.5249762154884213,
+    "held_out_point_distance_median_cm": 7.16264009475708,
+    "voxels": 128868
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.49315807866188827,
+    "held_out_point_distance_median_cm": 6.159178733825684,
+    "voxels": 125744
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.5142302403393582,
+    "held_out_point_distance_median_cm": 6.736767292022705,
+    "voxels": 87614
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5497875889395475,
+    "held_out_point_distance_median_cm": 6.531525611877441,
+    "voxels": 111542
+   }
+  },
+  "672": {
+   "cone": {
+    "held_out_iou": 0.4047783164540128,
+    "held_out_point_distance_median_cm": 14.612772941589355,
+    "voxels": 292095
+   },
+   "greedy": {
+    "held_out_iou": 0.16811849188576777,
+    "held_out_point_distance_median_cm": 59.9172477722168,
+    "voxels": 11550
+   },
+   "global": {
+    "held_out_iou": 0.2875532849746788,
+    "held_out_point_distance_median_cm": 36.318939208984375,
+    "voxels": 42647
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.517801317774514,
+    "held_out_point_distance_median_cm": 4.829433441162109,
+    "voxels": 101670
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.49656532395738895,
+    "held_out_point_distance_median_cm": 5.924997329711914,
+    "voxels": 92945
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.3167800128917948,
+    "held_out_point_distance_median_cm": 36.31925582885742,
+    "voxels": 40486
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.525155452902886,
+    "held_out_point_distance_median_cm": 4.829433441162109,
+    "voxels": 98213
+   }
+  },
+  "720": {
+   "cone": {
+    "held_out_iou": 0.44349211368086155,
+    "held_out_point_distance_median_cm": 11.910730361938477,
+    "voxels": 275298
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.45603389838030073,
+    "held_out_point_distance_median_cm": 5.536914348602295,
+    "voxels": 151505
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.4606776522364813,
+    "held_out_point_distance_median_cm": 5.298191070556641,
+    "voxels": 155762
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5112564251930246,
+    "held_out_point_distance_median_cm": 5.022589683532715,
+    "voxels": 97836
+   }
+  },
+  "768": {
+   "cone": {
+    "held_out_iou": 0.45058663781505215,
+    "held_out_point_distance_median_cm": 13.94060230255127,
+    "voxels": 301161
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.6337095146523614,
+    "held_out_point_distance_median_cm": 10.327831268310547,
+    "voxels": 39788
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.5127049412071074,
+    "held_out_point_distance_median_cm": 10.067689895629883,
+    "voxels": 39403
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6433906882512613,
+    "held_out_point_distance_median_cm": 8.662753105163574,
+    "voxels": 42202
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.639808541387952,
+    "held_out_point_distance_median_cm": 10.332234382629395,
+    "voxels": 38920
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5160164866621132,
+    "held_out_point_distance_median_cm": 10.067689895629883,
+    "voxels": 38570
+   }
+  },
+  "816": {
+   "cone": {
+    "held_out_iou": 0.46646348947891114,
+    "held_out_point_distance_median_cm": 14.616142272949219,
+    "voxels": 302540
+   },
+   "greedy": {
+    "held_out_iou": 0.5930518022880128,
+    "held_out_point_distance_median_cm": 7.440647602081299,
+    "voxels": 83282
+   },
+   "global": {
+    "held_out_iou": 0.46913326362480434,
+    "held_out_point_distance_median_cm": 37.96430969238281,
+    "voxels": 28573
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.6136596968297094,
+    "held_out_point_distance_median_cm": 5.798652172088623,
+    "voxels": 103352
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.5968663043783731,
+    "held_out_point_distance_median_cm": 6.569594383239746,
+    "voxels": 104221
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.4689014777073847,
+    "held_out_point_distance_median_cm": 37.96430969238281,
+    "voxels": 27944
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.614633990840414,
+    "held_out_point_distance_median_cm": 5.817782878875732,
+    "voxels": 101929
+   }
+  },
+  "864": {
+   "cone": {
+    "held_out_iou": 0.4566827936319028,
+    "held_out_point_distance_median_cm": 13.871386528015137,
+    "voxels": 311250
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.33733565101571567,
+    "held_out_point_distance_median_cm": 55.579219818115234,
+    "voxels": 19333
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.555272867856683,
+    "held_out_point_distance_median_cm": 7.717833518981934,
+    "voxels": 100769
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6090999595725942,
+    "held_out_point_distance_median_cm": 6.533964157104492,
+    "voxels": 104875
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.3363402923204173,
+    "held_out_point_distance_median_cm": 55.579219818115234,
+    "voxels": 18512
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5652858685332235,
+    "held_out_point_distance_median_cm": 7.691035270690918,
+    "voxels": 97548
+   }
+  },
+  "912": {
+   "cone": {
+    "held_out_iou": 0.42161171599389113,
+    "held_out_point_distance_median_cm": 15.624073028564453,
+    "voxels": 334667
+   },
+   "greedy": {
+    "held_out_iou": 0.0,
+    "held_out_point_distance_median_cm": NaN,
+    "voxels": 0
+   },
+   "global": {
+    "held_out_iou": 0.4661814186250902,
+    "held_out_point_distance_median_cm": 22.954452514648438,
+    "voxels": 38200
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.5391241735015757,
+    "held_out_point_distance_median_cm": 9.703831672668457,
+    "voxels": 44808
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.6716971189498723,
+    "held_out_point_distance_median_cm": 8.509950637817383,
+    "voxels": 45568
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.46187997457856317,
+    "held_out_point_distance_median_cm": 22.954452514648438,
+    "voxels": 37676
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5365527542886034,
+    "held_out_point_distance_median_cm": 9.781840324401855,
+    "voxels": 43727
+   }
+  },
+  "960": {
+   "cone": {
+    "held_out_iou": 0.4223113805562632,
+    "held_out_point_distance_median_cm": 12.964402198791504,
+    "voxels": 281282
+   },
+   "greedy": {
+    "held_out_iou": 0.07657172860574504,
+    "held_out_point_distance_median_cm": 88.68014526367188,
+    "voxels": 9065
+   },
+   "global": {
+    "held_out_iou": 0.08480575095556055,
+    "held_out_point_distance_median_cm": 90.45997619628906,
+    "voxels": 9270
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.4820875667186581,
+    "held_out_point_distance_median_cm": 8.024506568908691,
+    "voxels": 103214
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.4817610658256864,
+    "held_out_point_distance_median_cm": 7.081630706787109,
+    "voxels": 106569
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.07150002187184135,
+    "held_out_point_distance_median_cm": 90.45997619628906,
+    "voxels": 6001
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.49208024417912494,
+    "held_out_point_distance_median_cm": 8.024506568908691,
+    "voxels": 91264
+   }
+  },
+  "1008": {
+   "cone": {
+    "held_out_iou": 0.4336795524254608,
+    "held_out_point_distance_median_cm": 14.183605194091797,
+    "voxels": 305262
+   },
+   "greedy": {
+    "held_out_iou": 0.08172566913325859,
+    "held_out_point_distance_median_cm": 74.8021469116211,
+    "voxels": 5682
+   },
+   "global": {
+    "held_out_iou": 0.06505053409499406,
+    "held_out_point_distance_median_cm": 82.37120056152344,
+    "voxels": 4550
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.501518288021551,
+    "held_out_point_distance_median_cm": 8.47927474975586,
+    "voxels": 42678
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.5620742498855665,
+    "held_out_point_distance_median_cm": 8.30115795135498,
+    "voxels": 42237
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.06488943053411596,
+    "held_out_point_distance_median_cm": 82.37120056152344,
+    "voxels": 4521
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5102221109259846,
+    "held_out_point_distance_median_cm": 8.373176574707031,
+    "voxels": 40132
+   }
+  },
+  "1056": {
+   "cone": {
+    "held_out_iou": 0.44718991680057824,
+    "held_out_point_distance_median_cm": 11.657588958740234,
+    "voxels": 275417
+   },
+   "greedy": {
+    "held_out_iou": 0.12774307836426135,
+    "held_out_point_distance_median_cm": 44.6714973449707,
+    "voxels": 7262
+   },
+   "global": {
+    "held_out_iou": 0.128705680805426,
+    "held_out_point_distance_median_cm": 45.773677825927734,
+    "voxels": 8308
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.5346301110178382,
+    "held_out_point_distance_median_cm": 6.983273506164551,
+    "voxels": 47679
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.5918586215654795,
+    "held_out_point_distance_median_cm": 6.410667419433594,
+    "voxels": 47013
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.12745901824385175,
+    "held_out_point_distance_median_cm": 45.773677825927734,
+    "voxels": 7756
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.5447613964816246,
+    "held_out_point_distance_median_cm": 6.917303085327148,
+    "voxels": 45033
+   }
+  },
+  "1104": {
+   "cone": {
+    "held_out_iou": 0.45682225195866305,
+    "held_out_point_distance_median_cm": 11.313150405883789,
+    "voxels": 268119
+   },
+   "greedy": {
+    "held_out_iou": 0.08538172783692831,
+    "held_out_point_distance_median_cm": 48.62602996826172,
+    "voxels": 4027
+   },
+   "global": {
+    "held_out_iou": 0.2231866834557509,
+    "held_out_point_distance_median_cm": 57.821929931640625,
+    "voxels": 12175
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.4873226077147266,
+    "held_out_point_distance_median_cm": 18.20840835571289,
+    "voxels": 20697
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.3652992164180961,
+    "held_out_point_distance_median_cm": 30.91229820251465,
+    "voxels": 16302
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.2214842375744526,
+    "held_out_point_distance_median_cm": 57.828094482421875,
+    "voxels": 11972
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.4906433011936297,
+    "held_out_point_distance_median_cm": 18.20840835571289,
+    "voxels": 20054
+   }
+  },
+  "1152": {
+   "cone": {
+    "held_out_iou": 0.45736390398067917,
+    "held_out_point_distance_median_cm": 10.678339004516602,
+    "voxels": 222845
+   },
+   "greedy": {
+    "held_out_iou": 0.07128467218921108,
+    "held_out_point_distance_median_cm": 70.17388153076172,
+    "voxels": 4381
+   },
+   "global": {
+    "held_out_iou": 0.3432093767738771,
+    "held_out_point_distance_median_cm": 38.26377868652344,
+    "voxels": 16782
+   },
+   "global, class-size prior": {
+    "held_out_iou": 0.42643345501811003,
+    "held_out_point_distance_median_cm": 16.63096046447754,
+    "voxels": 18232
+   },
+   "global, carved extent": {
+    "held_out_iou": 0.4161921949269562,
+    "held_out_point_distance_median_cm": 15.160594940185547,
+    "voxels": 21194
+   },
+   "global \u2229 cone": {
+    "held_out_iou": 0.34106243460966235,
+    "held_out_point_distance_median_cm": 38.31204605102539,
+    "voxels": 16334
+   },
+   "global, class-size prior \u2229 cone": {
+    "held_out_iou": 0.4271529707622881,
+    "held_out_point_distance_median_cm": 16.82746124267578,
+    "voxels": 17519
+   }
+  }
+ }
+}

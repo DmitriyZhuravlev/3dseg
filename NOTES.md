@@ -836,3 +836,32 @@ run, so absolute numbers differ slightly from section 13):
   the carving they come within 0.014 IoU / 0.3 cm of carving alone but do not beat it, so
   they also remove some true volume. Silhouette carving with many frames remains the best
   shape model here; the cuboids' value is single-frame reconstruction (section 10).
+
+## 17. Single-frame reconstruction of the bike with recursive cuboids (`video_single_frame.py`)
+
+Input: one frame of bike.mp4, the camera (calibrated once from the parking lines) and that
+frame's ground pose. No other frame is used for the shape. 25 frames tried (every 48th);
+models scored from the held-out viewpoints (silhouette IoU on odd frames) and by the
+median distance of held-out triangulated points (`docs/single_frame/bike_single_frame.*`).
+
+| single-frame model | held-out IoU median (best) | point distance median |
+|---|---|---|
+| silhouette cone of the frame | 0.45 (0.50) | 13.9 cm |
+| recursive cuboids, greedy (original) | 0.09 (0.60) | 46.6 cm |
+| recursive cuboids, global solve | 0.34 (0.63) | 38.0 cm |
+| global + class-size prior | 0.53 (0.70) | 7.0 cm |
+| **global + class-size prior ∩ cone** | **0.54 (0.70)** | **6.5 cm** |
+| global, main box from the multi-frame carving (not single-frame) | 0.59 (0.72) | 6.4 cm |
+| carving, all 589 frames (reference) | 0.85 | 2.8 cm |
+
+- 21 of 25 frames give cuboids; the others are near head-on or from behind, where a
+  vanishing point goes to infinity (as in section 10).
+- The weak point of the single-frame cuboids is the main box fitted to one silhouette: its
+  depth is unconstrained, so the boxes land tens of centimetres off (points 38 cm) and
+  the greedy recursion often collapses (median 0.09).
+- Replacing it by a class-size prior (motorcycle with rider, 2.2 x 0.9 x 1.5 m, at the
+  frame's ground pose; the SpringerLifting chapter's "average size per object type")
+  fixes this: median IoU 0.34 -> 0.53, points 38 -> 7 cm, nearly what the true carved extent
+  gives (0.59). Cutting by the frame's own cone adds a little (0.54, 6.5 cm).
+- Caveat: the frame's pose comes from the video pipeline (heading from motion); a single
+  photo would need the heading from the vanishing points of the object, as in lift3d.py.

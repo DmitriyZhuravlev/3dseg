@@ -382,3 +382,30 @@ Missing before writing:
   methods (DUSt3R, TripoSR);
 - ablations;
 - a literature search confirming the lean-prior angle.
+
+## 8. Initial poses from optical flow (SpringerLifting chapter, step 1)
+
+Idea taken from `SpringerLifting/author/moving.tex`: the heading of a moving object is
+the direction of its dense optical flow, and with the heading known the footprint
+rectangle on the bird's-eye view follows from the silhouette's ground contacts.
+`video3d.flow_headings` back-projects every object pixel and its Farneback flow end
+point onto the ground (a homothety from the camera, so a translation keeps its direction
+at any point height) and takes the magnitude-weighted mean direction.
+`video3d.footprint_centre` puts the pose at the footprint centre instead of the
+silhouette's nearest point. `initial_poses(..., frames=...)` uses both; `run_bike` passes
+the frames.
+
+`bench_flow_init.py` renders a textured 1.6 x 0.6 x 0.9 m box on textured ground
+(camera of `tests/test_video3d.py`), carves it from the initial poses alone (no pose
+refinement) and checks held-out silhouettes (`docs/video3d/flow_init_benchmark.*`):
+
+| trajectory | heading err median (track -> flow) | position err median | held-out IoU | volume IoU |
+|---|---|---|---|---|
+| arc | 6.5 -> 2.6 deg | 0.82 -> 0.21 m | 0.83 -> 0.91 | 0.43 -> 0.59 |
+| start (from rest, then tight turn) | 23.2 -> 4.5 deg | 0.74 -> 0.09 m | 0.78 -> 0.86 | 0.48 -> 0.53 |
+| s-curve with speed dip | 5.7 -> 4.7 deg | 0.81 -> 0.13 m | 0.71 -> 0.86 | 0.36 -> 0.59 |
+
+Limits: in a tight turn (radius ~1 m for a 1.6 m box) the rotation adds flow and the
+heading error grows to 25-30 deg ("start", last frames); a static object gives no flow
+(falls back to interpolation between moving frames). Not yet measured on bike.mp4,
+which is not in the repository: `python video_demos.py bike --video bike.mp4` now uses it.

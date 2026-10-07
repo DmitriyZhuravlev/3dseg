@@ -160,31 +160,132 @@ def pose_matrix(x, y, yaw, lean=0.0):
     return T
 
 
-def initial_poses(cam, masks, fps, step=1, smooth_s=0.25):
-    """Ground track from the silhouettes' bottom-centre, heading from motion, lean from the turn."""
+def _ground_rays_ok(cam, uv):
+    """Pixels whose viewing ray goes down, i.e. meets the ground in front of the camera."""
+    return cam.ray(uv)[:, 2] < -1e-6
+
+
+def flow_headings(cam, frames, masks, min_flow=0.3, pad=20):
+    """Per-frame heading from the object's dense optical flow, mapped onto the ground.
+
+    The direction of motion is read from the flow, not from differencing a track
+    (Zhuravlev, "Moving Object 3D Detection and Segmentation Using Optical Flow
+    Clustering", SpringerLifting/). Every object pixel and its flow end point are
+    back-projected onto z=0. For a translating rigid object this keeps the direction
+    of travel for any point height: the back-projection is a homothety from the
+    camera, which scales the displacement but does not turn it. Returns
+    (yaw[T], confidence[T]); yaw is NaN where the flow says nothing (object still or
+    missing), confidence is the length of the weighted mean unit vector (1 = all
+    pixels agree).
+    """
     T = len(masks)
+    yaw, conf = np.full(T, np.nan), np.zeros(T)
+    gray = [f if f.ndim == 2 else cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) for f in frames]
+    H, W = masks.shape[1:]
+    for t in range(T - 1):
+        ys, xs = np.nonzero(masks[t])
+        if len(xs) < 50:
+            continue
+        x0, x1 = max(xs.min() - pad, 0), min(xs.max() + pad + 1, W)
+        y0, y1 = max(ys.min() - pad, 0), min(ys.max() + pad + 1, H)
+        flow = cv2.calcOpticalFlowFarneback(gray[t][y0:y1, x0:x1], gray[t + 1][y0:y1, x0:x1], None,
+                                            0.5, 3, 15, 3, 5, 1.2, 0)
+        u = flow[ys - y0, xs - x0]
+        keep = np.linalg.norm(u, axis=1) > min_flow
+        if keep.sum() < 30:
+            continue
+        p = np.column_stack([xs, ys])[keep].astype(float)
+        q = p + u[keep]
+        ok = _ground_rays_ok(cam, p) & _ground_rays_ok(cam, q)
+        if ok.sum() < 30:
+            continue
+        d = (cam.backproject_to_plane(q[ok], 0.0) - cam.backproject_to_plane(p[ok], 0.0))[:, :2]
+        n = np.linalg.norm(d, axis=1)
+        unit = d / np.maximum(n, 1e-9)[:, None]
+        mean = (unit * n[:, None]).sum(0) / n.sum()       # magnitude-weighted circular mean
+        yaw[t], conf[t] = math.atan2(mean[1], mean[0]), np.linalg.norm(mean)
+    if T > 1:
+        yaw[-1], conf[-1] = yaw[-2], conf[-2]
+    return yaw, conf
+
+
+def footprint_centre(cam, mask, yaw, min_width=0.3):
+    """Ground centre of the object's footprint rectangle, given its heading.
+
+    The bird's-eye-view step of the article: the lowest silhouette pixel of each
+    column is a ground contact on the near bottom edges of the box. In the heading
+    frame those contacts span the footprint's length (u) and, where the near end is
+    visible, its width (v); the far side lies away from the camera. Returns
+    (centre_xy, (length, width)) or None.
+    """
+    cols = np.nonzero(mask.any(0))[0]
+    if len(cols) < 5:
+        return None
+    rows = mask.shape[0] - 1 - np.argmax(mask[::-1, cols], axis=0)
+    uv = np.column_stack([cols, rows]).astype(float)
+    uv = uv[_ground_rays_ok(cam, uv)]
+    if len(uv) < 5:
+        return None
+    g = cam.backproject_to_plane(uv, 0.0)[:, :2]
+    c, s = math.cos(yaw), math.sin(yaw)
+    Rt = np.array([[c, s], [-s, c]])                     # world -> heading frame
+    loc = g @ Rt.T
+    ulo, uhi = np.percentile(loc[:, 0], [2, 98])
+    vlo, vhi = np.percentile(loc[:, 1], [2, 98])
+    width = max(vhi - vlo, min_width)
+    cam_v = (Rt @ cam.C[:2])[1]
+    vc = vlo + width / 2 if cam_v < (vlo + vhi) / 2 else vhi - width / 2
+    centre = Rt.T @ np.array([(ulo + uhi) / 2, vc])
+    return centre, (uhi - ulo, width)
+
+
+def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None):
+    """Ground track, heading and lean for every frame.
+
+    Without frames: track from the silhouettes' bottom-centre and heading from its
+    direction of travel. With frames: heading from the dense optical flow
+    (flow_headings) and position from the footprint centre for that heading
+    (footprint_centre), so the track is the object's centre rather than its nearest
+    point, and the heading is defined from the first frame on, for slow objects too.
+    Lean always comes from the turn of the smoothed track.
+    """
+    T = len(masks)
+    tt = np.arange(T)
+    dt = step / fps
+    sig = max(1.0, smooth_s / dt)
+    flow_yaw = None
+    if frames is not None:
+        fy, conf = flow_headings(cam, frames, masks)
+        good = ~np.isnan(fy) & (conf > 0.5)
+        if good.sum() >= max(3, T // 4):
+            uw = np.unwrap(fy[good])
+            flow_yaw = gaussian_filter1d(np.interp(tt, tt[good], uw), max(1.0, sig / 2))
     pts = np.full((T, 2), np.nan)
+    ground = np.full((T, 3), np.nan)
     for t, m in enumerate(masks):
+        if flow_yaw is not None:
+            fp = footprint_centre(cam, m, flow_yaw[t])
+            if fp is not None:
+                ground[t, :2] = fp[0]
+            continue
         ys, xs = np.nonzero(m)
         if len(xs) < 50:
             continue
         ybot = ys.max()
         band = xs[ys >= ybot - 3]
         pts[t] = [band.mean(), ybot]
-    ok = ~np.isnan(pts[:, 0])
-    ground = np.full((T, 3), np.nan)
-    ground[ok] = cam.backproject_to_plane(pts[ok], 0.0)
+    if flow_yaw is None:
+        ok = ~np.isnan(pts[:, 0])
+        ground[ok] = cam.backproject_to_plane(pts[ok], 0.0)
+    ok = ~np.isnan(ground[:, 0])
     # interpolate gaps, smooth
-    tt = np.arange(T)
     for k in (0, 1):
         ground[:, k] = np.interp(tt, tt[ok], ground[ok, k])
-    dt = step / fps
-    sig = max(1.0, smooth_s / dt)
     xy = np.stack([gaussian_filter1d(ground[:, k], sig) for k in (0, 1)], 1)
     v = np.gradient(xy, dt, axis=0)
     a = np.gradient(v, dt, axis=0)
     speed = np.linalg.norm(v, axis=1)
-    yaw = np.unwrap(np.arctan2(v[:, 1], v[:, 0]))
+    yaw = flow_yaw if flow_yaw is not None else np.unwrap(np.arctan2(v[:, 1], v[:, 0]))
     curv = (v[:, 0] * a[:, 1] - v[:, 1] * a[:, 0]) / np.maximum(speed, 0.3) ** 3   # signed 1/r
     lean = -np.arctan(speed ** 2 * curv / G)          # lean into the turn
     lean = np.clip(gaussian_filter1d(lean, sig), -0.7, 0.7)

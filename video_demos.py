@@ -240,7 +240,7 @@ def run_bike(video, out, log=print):
     Mf = v3.object_masks(frames[::step], bg)
     T = len(Mf)
     train = list(range(0, T, 2))
-    poses, _ = v3.initial_poses(cam, Mf, fps, step=step)
+    poses, _ = v3.initial_poses(cam, Mf, fps, step=step, frames=frames[::step])
     grid = v3.VoxelGrid((-1.3, -0.7, 0.0), (1.3, 0.7, 1.9), 0.03)
     for it in range(3):
         frac, seen = v3.carve(cam, Mf, poses, grid, train, margin_px=1)

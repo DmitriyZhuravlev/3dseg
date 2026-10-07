@@ -98,12 +98,14 @@ PYTHONPATH=. python docs/make_segment_demo.py --eval-dir <dir> --video bike.mp4 
 python cuboids_global.py --eval-dir <dir>      # global-solve variants of the recursive cuboids
 python video_normals.py --video bike.mp4 --background background.png --out <dir>   # triangulation + normals (needs open3d)
 python normal_integration.py --eval-dir <dir>  # shape from normals on the synthetic pig
+python cuboid_normals.py --eval-dir <dir>      # normals + cuboids on one photo (box, pig)
+PYTHONPATH=.:docs python docs/make_cuboid_normals_demo.py --eval-dir <dir>
 python video_cuboids.py --video bike.mp4 --background background.png --out <dir>   # cuboids + triangulated points
 PYTHONPATH=.:docs python docs/make_cuboids_demo.py --eval-dir <dir> --video bike.mp4 --background background.png --combo-dir <dir>
 PYTHONPATH=.:docs python docs/make_normals_demo.py --eval-dir <dir> --normals-dir <dir> --video bike.mp4 --background background.png
 ```
 
-See NOTES.md sections 9–13 and docs/METHODS.md.
+See NOTES.md sections 9–14 and docs/METHODS.md.
 
 ## Interactive smoke test without a display
 

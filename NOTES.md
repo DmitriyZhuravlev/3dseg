@@ -636,3 +636,77 @@ then 4.1 % with 10 points, 3.1 % with 30 and **1.9 % with 100**.
 
 Images: `docs/segments/cuboids_global_box.png`, `cuboids_global_pig.png` and
 `bike_cuboids_points.png` (`docs/make_cuboids_demo.py`).
+
+## 14. Normals + recursive cuboids on a single photo (`cuboid_normals.py`)
+
+**The idea.** The two cues fail in complementary ways (§§11–12):
+- normals give a smooth part's shape very accurately, but cannot place separate parts;
+- cuboids place every segment, but give each one a solid box's surface.
+
+So each superpixel takes its **shape** from the normals and its **place** from the
+cuboids:
+- normals are integrated inside each segment only, giving each segment a log-depth
+  field up to one offset. This is the same single unknown per segment as a cuboid's
+  scale;
+- the offsets are solved jointly from the cuboid priors (the segment's surface at its
+  global-solve cuboid's front depth; seed segments weighted ×10) and robust
+  boundary continuity (Cauchy IRLS, σ = 0.01, so jumps can be cut).
+
+**Normal sources.** No learned normal estimator is reachable here (Hugging Face and
+GitHub return 403, and no PyTorch). So the sources are:
+- exact normals;
+- exact + 10° noise, about a learned estimator's accuracy;
+- image only: the planar-patch orientation for `box.JPG` (vanishing-point axes) and
+  silhouette normals for the pig.
+
+**Per-pixel depth error, median / ≤3 %**, with untuned default weights
+(`python cuboid_normals.py --eval-dir <segeval>`):
+
+| | box.JPG | synthetic pig |
+|---|---|---|
+| Recursive cuboids, global solve (no normals) | 4.8 % / 35 % | 2.4 % / 61 % |
+| Exact normals alone (whole image, ground-anchored) | **0.36 % / 100 %** | 3.9 % / 40 % |
+| Exact normals + cuboids | 4.1 % / 39 % | 2.0 % / 62 % |
+| 10°-noisy normals alone | 0.76 % / 95 % | 3.2 % / 46 % |
+| 10°-noisy normals + cuboids | 4.3 % / 39 % | 2.0 % / 63 % |
+| Image-only normals alone | 2.3 % / 56 % | 8.1 % / 38 % |
+| **Image-only normals + cuboids** | 4.1 % / 41 % | **2.0 % / 66 %** |
+| `lift3d` whole-object model (reference) | 0.5 % / 100 % | 2.0 % / 68 % |
+
+The pig ground truth here uses bisection-refined surface hits (§12b), so its
+cuboid number (2.38 %) differs slightly from §11 (2.35 %).
+
+**Reading the results.**
+- **Pig (several parts, one occluding another): the combination is the best
+  segment-based result.**
+  - Every normal source reaches 2.0 %: better than the cuboids (2.4 %) and much
+    better than the normals alone (3.2–8.1 %).
+  - It ties `lift3d`'s whole-object model.
+  - Even the crude image-only silhouette normals work, because the cuboids supply
+    exactly what the normals lack: where each part sits.
+- **Box (one continuous part): normals alone win** (0.36 % exact, 2.3 % image-only),
+  and the combination (4.1 %) inherits the cuboids' wrong top face.
+  - This is an ambiguity, not a bug. When two neighbouring cuboid priors disagree by
+    some percent, that looks exactly like a depth jump of that size, so the robust step
+    cuts the link (the unit test shows this on a two-segment plane).
+  - Weighting the cuboid priors lower (0.1 instead of 1) fixes the box but breaks the
+    pig. No single setting suits both (sweep below), and choosing per object would mean
+    tuning on the test data.
+- **Sensitivity sweep** (not used for the table above):
+
+| Setting | box exact / image | pig exact / image |
+|---|---|---|
+| w_box 1, σ 0.01 (default) | 4.1 / 4.1 % | 2.0 / 2.0 % |
+| w_box 0.1, σ 0.01 | 4.3 / 3.4 % | 3.5 / 2.1 % |
+| w_box 0.02, σ 0.03 | 1.9 / 5.8 % | 4.1 / 2.8 % |
+| Two-stage (parts from robust links, one cuboid offset per part), σ 0.03 | 1.1–1.5 / 2.1–4.7 % | 3.7 / 1.9–2.4 % |
+
+- **Superpixels on image + normal map** (meant to put segment boundaries on occlusion
+  contours) made the cuboids themselves worse: box 5.3–6.1 %, pig 3.6–4.2 %.
+
+**What would resolve the ambiguity:** an occlusion cue that does not depend on the
+cuboids, e.g. image edges whose sides have different normals, or a learned occlusion or
+depth-edge detector. With that, a one-part object would get the normals-alone result and
+a multi-part object the combined one. Results come from two test objects only.
+
+Image: `docs/segments/cuboid_normals.png` (`docs/make_cuboid_normals_demo.py`).

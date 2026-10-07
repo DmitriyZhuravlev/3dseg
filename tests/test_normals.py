@@ -77,3 +77,28 @@ def test_point_anchors_pull_global_cuboids_to_measured_depth():
     e1 = s3.depth_errors(s3.depth_from_boxes(cam, uv, cg.boxes_of(
         cg.global_boxes(cam, img, mask, vps, point_anchors=(uv[sel], z[sel]), **kw))), z)
     assert e1["median_rel"] < e0["median_rel"]
+
+
+def test_segment_shapes_from_normals_placed_by_priors_and_continuity():
+    import cuboid_normals as cn
+    K = np.array([[800.0, 0, 320], [0, 800, 240], [0, 0, 1]])
+    cam = lift3d.Camera(K, np.eye(3), np.zeros(3))
+    ys, xs = np.mgrid[100:380:4, 100:540:4]
+    uv = np.c_[xs.ravel(), ys.ravel()].astype(float)
+    # tilted plane z = 2 + 0.3 x (camera frame); its normal faces the camera
+    q = np.c_[(uv[:, 0] - 320) / 800, (uv[:, 1] - 240) / 800, np.ones(len(uv))]
+    z = 2.0 / (1 - 0.3 * q[:, 0])
+    n = np.tile(np.array([0.3, 0.0, -1.0]) / np.hypot(0.3, 1.0), (len(uv), 1))
+    seg = np.where(uv[:, 0] < 320, 1, 2)
+    x = cn.integrate_within_segments(cam, uv, n, seg)
+    # cuboid-like priors: right segment exact, left one 4 % too far; continuity must reconcile them
+    prior = np.where(seg == 1, 1.04 * z, z)
+    # with weak cuboid priors, continuity reconciles the two segments
+    zc = cn.place_segments(cam, uv, n, seg, x, prior, seeds={2}, w_box=0.1, w_seed=10.0)
+    assert np.median(np.abs(zc - z) / z) < 0.01
+    # with equal weights a 4 % prior disagreement is indistinguishable from a 4 % depth jump:
+    # the robust step cuts the link (the ambiguity behind the box.JPG result, NOTES section 14)
+    ze = cn.place_segments(cam, uv, n, seg, x, prior, seeds={2}, w_box=1.0, w_seed=10.0)
+    assert np.median(np.abs(ze - z) / z) > 0.01
+    zn = cn.place_segments(cam, uv, n, seg, x, prior, seeds={2}, continuity=False)
+    assert abs(np.median(zn[seg == 1] / z[seg == 1]) - 1.04) < 0.005     # without continuity the bias stays

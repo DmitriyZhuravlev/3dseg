@@ -1,0 +1,147 @@
+{
+ "box": {
+  "recursive cuboids, global solve (no normals)": {
+   "median_rel": 0.047710505896886274,
+   "mean_rel": 0.06455403921930747,
+   "within_1pct": 0.09959651564674789,
+   "within_3pct": 0.3544015764039848,
+   "coverage": 0.9999921805969332
+  },
+  "exact normals: normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.003552677624215331,
+   "mean_rel": 0.003960446098870216,
+   "within_1pct": 0.9692853847537279,
+   "within_3pct": 1.0,
+   "coverage": 1.0
+  },
+  "exact normals: normals in segments + cuboid placement": {
+   "median_rel": 0.04282115726889772,
+   "mean_rel": 0.05993323306255405,
+   "within_1pct": 0.1427979388053516,
+   "within_3pct": 0.3632738276759952,
+   "coverage": 1.0
+  },
+  "exact normals: normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.041139168124888506,
+   "mean_rel": 0.058877070200091655,
+   "within_1pct": 0.15590325834525792,
+   "within_3pct": 0.3869587995652412,
+   "coverage": 1.0
+  },
+  "exact + 10 deg noise: normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.007586093361616551,
+   "mean_rel": 0.009959314241299142,
+   "within_1pct": 0.6291335319461713,
+   "within_3pct": 0.9541079234011276,
+   "coverage": 1.0
+  },
+  "exact + 10 deg noise: normals in segments + cuboid placement": {
+   "median_rel": 0.044331637990755186,
+   "mean_rel": 0.060830775160278926,
+   "within_1pct": 0.11611813554153276,
+   "within_3pct": 0.3695762665478117,
+   "coverage": 1.0
+  },
+  "exact + 10 deg noise: normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.04296932787336582,
+   "mean_rel": 0.05989972971646149,
+   "within_1pct": 0.1421489283508097,
+   "within_3pct": 0.3904697115422209,
+   "coverage": 1.0
+  },
+  "image only (planar-patch orientation): normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.023112844306859535,
+   "mean_rel": 0.0410147415788939,
+   "within_1pct": 0.28299983579253557,
+   "within_3pct": 0.5584461282225714,
+   "coverage": 1.0
+  },
+  "image only (planar-patch orientation): normals in segments + cuboid placement": {
+   "median_rel": 0.04282400769769675,
+   "mean_rel": 0.060290427039955595,
+   "within_1pct": 0.14129661341653177,
+   "within_3pct": 0.3818918263779743,
+   "coverage": 1.0
+  },
+  "image only (planar-patch orientation): normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.041179527445793555,
+   "mean_rel": 0.059298157170670725,
+   "within_1pct": 0.16107970317545958,
+   "within_3pct": 0.4076723982891146,
+   "coverage": 1.0
+  }
+ },
+ "pig": {
+  "recursive cuboids, global solve (no normals)": {
+   "median_rel": 0.023785256139703507,
+   "mean_rel": 0.03404049774286431,
+   "within_1pct": 0.20147212613627222,
+   "within_3pct": 0.6074330303274073,
+   "coverage": 0.9963132163180252
+  },
+  "exact normals: normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.03882336851119722,
+   "mean_rel": 0.03881000707924,
+   "within_1pct": 0.03113729261841789,
+   "within_3pct": 0.40426384547567523,
+   "coverage": 1.0
+  },
+  "exact normals: normals in segments + cuboid placement": {
+   "median_rel": 0.02199121974792457,
+   "mean_rel": 0.03222043732278916,
+   "within_1pct": 0.16496854069413436,
+   "within_3pct": 0.6375482037751167,
+   "coverage": 0.987216478320109
+  },
+  "exact normals: normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.019862135949312906,
+   "mean_rel": 0.030403248001819403,
+   "within_1pct": 0.23235234422569515,
+   "within_3pct": 0.6161152831337527,
+   "coverage": 0.987216478320109
+  },
+  "exact + 10 deg noise: normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.032330816755345076,
+   "mean_rel": 0.033947886013199,
+   "within_1pct": 0.01659052656888675,
+   "within_3pct": 0.45591889075899655,
+   "coverage": 1.0
+  },
+  "exact + 10 deg noise: normals in segments + cuboid placement": {
+   "median_rel": 0.022668079089144845,
+   "mean_rel": 0.03195280464844739,
+   "within_1pct": 0.1783641160949868,
+   "within_3pct": 0.6321899736147757,
+   "coverage": 0.987216478320109
+  },
+  "exact + 10 deg noise: normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.020028092298673507,
+   "mean_rel": 0.030036383117704058,
+   "within_1pct": 0.26531357824233814,
+   "within_3pct": 0.62817130099452,
+   "coverage": 0.987216478320109
+  },
+  "image only (silhouette normals): normals alone (whole image, ground-anchored)": {
+   "median_rel": 0.08141642806285365,
+   "mean_rel": 0.08097745811768117,
+   "within_1pct": 0.2461328845074938,
+   "within_3pct": 0.3778552536667468,
+   "coverage": 1.0
+  },
+  "image only (silhouette normals): normals in segments + cuboid placement": {
+   "median_rel": 0.021104484375128758,
+   "mean_rel": 0.03253734995587277,
+   "within_1pct": 0.18071848995331846,
+   "within_3pct": 0.6454637710574386,
+   "coverage": 0.987216478320109
+  },
+  "image only (silhouette normals): normals in segments + cuboid placement + robust continuity": {
+   "median_rel": 0.019889673586662392,
+   "mean_rel": 0.030833070524878457,
+   "within_1pct": 0.2636898721331439,
+   "within_3pct": 0.6599553480819972,
+   "coverage": 0.987216478320109
+  }
+ },
+ "seconds": 105
+}

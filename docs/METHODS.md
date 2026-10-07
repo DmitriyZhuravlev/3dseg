@@ -209,3 +209,22 @@ On bike.mp4, fused over frames:
 On `box.JPG`, 100 noisy 3D points cut the global solve's error from 4.8 % to 1.9 %.
 
 ![cuboids + points](segments/bike_cuboids_points.png)
+
+## 10. Normals + recursive cuboids on a single photo (`cuboid_normals.py`)
+
+Each superpixel takes its shape from the normals, integrated inside the segment only.
+Its place comes from the recursive cuboids: one offset per segment, solved from the
+cuboid priors and robust boundary continuity.
+
+| median depth error | box.JPG | synthetic pig |
+|---|---|---|
+| Cuboids only | 4.8 % | 2.4 % |
+| Image-only normals only | **2.3 %** | 8.1 % |
+| **Image-only normals + cuboids** | 4.1 % | **2.0 %** |
+| Exact normals only / + cuboids | **0.36 %** / 4.1 % | 3.9 % / 2.0 % |
+
+- **Several parts (pig):** the combination is the best segment-based result.
+- **One continuous part (box):** normals alone are better. Telling these cases apart
+  needs an occlusion cue that does not come from the cuboids (NOTES.md section 14).
+
+![normals + cuboids](segments/cuboid_normals.png)

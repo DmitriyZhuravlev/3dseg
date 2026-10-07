@@ -439,3 +439,9 @@ extremes are bottom corners. The default therefore stays `footprint="contacts"`.
 the true size does not change this (`flow_closed_true_dims`). The closed form becomes
 useful once the heading is refined (after pose refinement, or with tracking) or for
 the type-size step, where its fitting error ranks object types.
+
+Demo pictures (`python docs/flow_init_demo.py`):
+
+![frames](docs/video3d/flow_init_frames.png)
+![construction](docs/video3d/flow_init_construction.png)
+![tracks](docs/video3d/flow_init_tracks.png)

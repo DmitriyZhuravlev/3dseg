@@ -382,3 +382,331 @@ Missing before writing:
   methods (DUSt3R, TripoSR);
 - ablations;
 - a literature search confirming the lean-prior angle.
+
+## 9. The original recursive segment method: drift fix and Make3D comparison
+
+`segment3d.py` keeps the structure of `surf.py`/`cube.py`:
+- a vanishing-point tangent box per superpixel;
+- seeds at the object's six extreme points;
+- recursive propagation between neighbouring superpixels.
+
+The geometry is replaced with the calibrated camera from `lift3d.py`.
+
+**Findings.**
+- **The original's whole-object tangent box is metric once the camera is
+  calibrated.** On `box.JPG` it gives 0.320 × 0.461 × 0.304 m against the
+  traced 0.348 × 0.446 × 0.282 m, with zero reprojection error.
+- **Recursive boxes.** With the calibrated camera, every superpixel gets a box
+  (104/104 on `box.JPG`, against 6 with the original code). But the boxes
+  drift in 3D. A superpixel is a patch of surface, while its box depth comes
+  from its 2D extent, and the error accumulates along the propagation.
+- **Drift fix (`patch_reconstruct`).** Each superpixel is a planar patch: its
+  pixels back-projected onto an axis-aligned plane, so no depth is guessed.
+  - Seeds sit on faces of the main box. That box is `lift3d`'s edge-refined
+    fit, which matters: anchoring on the silhouette-only box gives 2.2 %
+    median error, the edge-refined box 1.3 %.
+  - A neighbour goes on the same plane or folds through the shared edge.
+    Colour similarity and vanishing-point edge votes pick between the two
+    (the orientation-map cue of Lee, Hebert & Kanade 2009).
+  - A connectivity refinement then minimises 3D gaps across boundaries.
+- **Make3D-style baseline (`make3d_planes`).** A global least-squares solve of
+  one free plane per superpixel, with Make3D's connectivity and coplanarity
+  terms (Saxena et al. 2009). The original Make3D code and its learned depth
+  model are not reachable from this environment, and the model was trained on
+  outdoor scenes. Its learned per-pixel term is therefore replaced by the same
+  seed anchors the recursive method uses.
+
+**Per-pixel depth error against 3D ground truth** (`python segment3d_eval.py`):
+
+| Method | box.JPG (traced box): median / ≤3 % | synthetic pig: median / ≤3 % |
+|---|---|---|
+| Recursive boxes (original method, calibrated; segments may also attach to main-box planes) | 3.6 % / 46 % | 3.0 % / 49 % |
+| **Recursive planar patches (drift fix)** | **1.3 % / 84 %** | 4.0 % / 40 % |
+| — without the orientation cue | 1.2 % / 86 % | 4.0 % / 40 % |
+| — without connectivity refinement | 1.3 % / 82 % | 5.0 % / 29 % |
+| — with the silhouette-only main box | 2.2 % / 65 % | 4.8 % / 29 % |
+| Make3D-style MRF (same anchors) | 1.8 % / 68 % | 5.1 % / 31 % |
+| `lift3d` (box / round model), reference | 0.5 % / 100 % | 2.0 % / 68 % |
+
+**Reading the results.**
+- **Flat-faced objects.** On `box.JPG` the drift fix cuts the original
+  recursive method's error by about 3× and beats the Make3D-style global
+  solve. The edge-refined main box is the largest single gain; connectivity
+  refinement removes gross outliers (mean error 3.4 % → 2.6 %).
+- **Orientation cue.** It does not help on this photo (printed graphics give
+  misleading edges) and has no effect on the untextured pig.
+- **Curved objects.** Axis-aligned flat patches suit flat faces, not curves.
+  On the pig the patches are worse than the original's solid segment boxes,
+  and the Make3D-style solve, with few anchors, is worst.
+- **Whole-object models.** For both objects, `lift3d`'s whole-object models
+  are more accurate than any per-segment method. Per-segment methods only pay
+  off when parts sit at different depths, which these test objects lack.
+
+**Possible next steps.**
+- Free (not axis-aligned) patch planes for curved objects.
+- Combine the round model as anchors with segment-level detail.
+- Test on multi-part objects.
+
+## 10. The original recursive box method on video (`video_segments.py`)
+
+This reuses the bike.mp4 solution from section 7:
+- the calibrated camera;
+- each frame's pose (including lean);
+- the carved model's extent, used as the main box.
+
+**Per frame.** The camera is expressed in the motorcycle's frame, which gives
+the vanishing points of the object axes for that frame. `segment3d.reconstruct`
+then runs unchanged.
+- The original 2D tangent box (`cube.compute_3d_box_from_plain_mask_new`)
+  assumes the X vanishing point lies left of the Y one.
+- When the bike faces the other way, the method works in a frame rotated 90°
+  about the up axis, and the boxes are rotated back.
+- Without this, 30 of 74 sampled frames produced no boxes. 15 frames still
+  produce none: near head-on views, where a vanishing point is at infinity.
+
+**Fusion.** All boxes are in the object frame. A voxel is kept when the boxes
+of at least τ of the frames cover it; τ = 0.3 is chosen on the fusion frames.
+
+**Held-out silhouette IoU (74 odd frames)**
+
+| Model | held-out IoU |
+|---|---|
+| One frame | 0.513 |
+| Fused, before the rotation fix (28 frames) | 0.723 |
+| **Fused, 59 frames** | **0.765** |
+| Carving | 0.848 |
+
+Reproduce with:
+
+    python video_segments.py --video bike.mp4 --background background.png --out docs/video3d
+
+## 11. Improving the recursive cuboids: a global solve (`cuboids_global.py`)
+
+**The key fact.** Once the camera is calibrated, a segment's VP-tangent 2D box fixes its
+3D box up to one number. Every lift is a scaled copy of a canonical lift, scaled about
+the camera centre: `box(s) = C + s (B - C)`. This is verified to 1e-9 m.
+
+So the recursive method has one unknown per segment, and all its constraints are linear
+in those unknowns:
+- **contact:** the face pair chosen by 2D overlap is coplanar, as in the original;
+- **depth continuity** on shared boundaries;
+- **seed anchors** on the main box.
+
+**The variant.** Instead of breadth-first propagation, solve all constraints at once:
+- robust least squares (IRLS with a Huber loss);
+- each scale bounded so its box stays inside the main box.
+
+**Per-pixel depth error against 3D ground truth** (`python cuboids_global.py --eval-dir <segeval>`):
+
+| Variant | box.JPG median / ≤3 % | synthetic pig median / ≤3 % |
+|---|---|---|
+| Original recursive boxes (greedy) | **3.6 % / 46 %** | 3.0 % / 49 % |
+| Global: contact only | 4.5 % / 36 % | 2.7 % / 56 % |
+| Global: continuity only | 4.8 % / 35 % | 2.3 % / 61 % |
+| Global: contact + continuity | 4.8 % / 35 % | 2.4 % / 61 % |
+| — no robust loss | 4.9 % / 34 % | 2.7 % / 54 % |
+| — no main-box bounds | 4.3 % / 34 % | 9.2 % / 34 % |
+| — silhouette-only main box | 5.9 % / 28 % | 3.2 % / 47 % |
+| — smaller segments (100 px) | 5.3 % / 32 % | 3.4 % / 44 % |
+| — plus a whole-object prior (`lift3d` model depth) | 3.8 % / 45 % | **2.2 % / 62 %** |
+| Recursive planar patches (§9) | **1.3 % / 84 %** | 4.0 % / 40 % |
+| `lift3d` whole-object model | 0.5 % / 100 % | 2.0 % / 68 % |
+
+**Reading the results.**
+- **Curved object (pig): the global solve helps** (3.0 % → 2.3 %). The robust loss
+  and the main-box bounds are both needed.
+- **Flat-faced box: it is worse** (3.6 % → 4.8 %). Each segment is a solid box whose
+  depth comes from its 2D extent. Continuity and contact then pull neighbouring solids
+  to the same depth, which flattens the box's faces into a wrong compromise. The
+  planar patches (§9) remain the right model for flat faces.
+- **No variant beats the whole-object models** on these single-part objects.
+- **Choosing a variant:** planar patches for flat-faced objects, the global box solve
+  for curved ones.
+
+## 12. Triangulation, 3D normals and shape from normals
+
+### 12a. Video: triangulation in the object frame (`video_normals.py`, bike.mp4)
+
+**Setup.** In the motorcycle's frame, the fixed camera becomes a moving camera, with
+the poses known from §7. So feature tracks can be triangulated in metres with no
+further unknowns.
+
+**Tracks.** KLT tracks inside the mask, with a forward-backward check. Even and odd
+frames are tracked separately; odd frames are held out.
+- Even frames: 1777 tracks; 634 triangulated (baseline ≥ 3°, reprojection ≤ 2.5 px);
+  457 lie near the carved hull.
+- Median reprojection error: **1.34 px**, so the §7 poses are good enough for
+  triangulation.
+
+**Normals.** A local plane fit (PCA, 16 neighbours), oriented towards the cameras
+that saw each point.
+
+**Models**, scored on points triangulated only from the held-out odd frames
+(distance to the surface) and on held-out silhouette IoU:
+
+| Model | held-out points: median distance / ≤5 cm | held-out IoU |
+|---|---|---|
+| Carving (silhouettes only, §7) | 2.7 cm / 76 % | **0.848** |
+| Poisson from triangulated points + PCA normals | 3.1 cm / 70 % | 0.747 |
+| Poisson from triangulated + carved-surface oriented points | 2.9 cm / 79 % | 0.694 |
+| **Carving + free space from triangulated points** | **2.3 cm / 85 %** | 0.845 |
+
+- **Free-space carving.** If a camera saw a point, the voxels between the camera and
+  that point are empty. This removes 8421 voxels that silhouettes cannot remove
+  (concavities) and moves the model closer to independently measured surface points.
+- **Poisson from these sparse points alone** is worse. 457 points are too few for a
+  surface, and the textureless parts (tyres, black engine) have no tracks.
+
+### 12b. Single image: shape from normals (`normal_integration.py`, synthetic pig)
+
+**Integration.** A normal field fixes the gradient of log depth:
+
+    d log z / du = -n_x / (n · (u - cx, v - cy, f))
+
+Poisson-type least squares then gives the shape up to scale. The lowest object pixels
+on the table fix the scale, so no ground truth is used.
+
+| Normals | depth error median / ≤3 % |
+|---|---|
+| Exact normals of the true surface | 3.9 % / 40 % |
+| Exact + 5° noise | 3.8 % / 41 % |
+| Exact + 10° noise | 3.9 % / 41 % |
+| Silhouette normals (image only: exact on the outline, harmonic inside) | 8.2 % / 38 % |
+| Exact normals, plain least squares | 3.9 % / 40 % |
+| **Exact or 10°-noisy normals, true discontinuities, each part placed at its true depth (oracle)** | **0.5 % / 93–99 %** |
+
+**Reading the results.**
+- **Shape from normals is accurate and robust to noise (0.5 %),** but only within
+  each smooth part. Normals carry no information across a depth discontinuity, here
+  where the head occludes the body.
+- **So two things are missing:**
+  - finding the discontinuities: robust (IRLS) integration and cutting at grazing
+    normals did not find them reliably;
+  - placing the separated parts relative to each other.
+- **Integrating within superpixels**, then solving one depth offset per segment
+  (as in §11), also did not beat 2–3 %.
+- **Silhouette normals alone are too crude** (8 %): they only reproduce an inflated
+  round shape.
+
+**Where normals pay off.** Combined with something that places the parts:
+- in video: triangulated points or carving (12a);
+- in one image: the cuboid seeds and contacts. Each segment would get a shape from
+  normals, and the global solve (§11) would place the segments.
+
+A learned single-image normal estimator (DSINE, Omnidata) would provide the normals;
+the 10°-noise rows show that errors of that size do no harm. It needs downloading
+model weights, which were not used here.
+
+## 13. Combining the recursive cuboids with triangulation (`video_cuboids.py`)
+
+**The anchor.** A triangulated 3D point that falls inside a segment fixes that
+segment's one unknown scale directly: its box front must lie at the point's measured
+depth. So each point becomes one more linear row in the global solve of §11.
+
+This works in both directions:
+- triangulation gives exact depth only where there is texture;
+- the cuboid constraints (contact, continuity, seeds) carry that depth to the
+  segments without points.
+
+**On bike.mp4.** Each sampled even frame is solved three ways on the same
+superpixels; each method's boxes are fused by voxel voting, as in §10. The fused
+model of the third method is then cut by free space (§12a). Points come only from
+even-frame tracks, about 40 per frame.
+
+| Fused model | held-out IoU | held-out points: median / ≤5 cm |
+|---|---|---|
+| Recursive cuboids, greedy (original) | 0.753 | 5.9 cm / 43 % |
+| Recursive cuboids, global solve | 0.782 | 5.8 cm / 45 % |
+| **Recursive cuboids, global + triangulated points** | **0.815** | 4.7 cm / 53 % |
+| **… + free space** | 0.813 | **3.1 cm / 69 %** |
+| Carving (reference) | 0.848 | 2.7 cm / 76 % |
+| Carving + free space (reference) | 0.845 | 2.3 cm / 85 % |
+
+Each step helps the cuboid model:
+- the global solve: +0.03 IoU;
+- the points: another +0.03 IoU and 1.1 cm closer;
+- free space: another 1.6 cm closer.
+
+Carving is still best on this video, because it uses every frame's full outline. The
+cuboid route is the one that also applies to a single photo.
+
+**The same anchors on a photo.** On `box.JPG`, true depths with 0.5 % noise stand in
+for triangulated points. The global solve's median error is 4.8 % with no points,
+then 4.1 % with 10 points, 3.1 % with 30 and **1.9 % with 100**.
+
+Images: `docs/segments/cuboids_global_box.png`, `cuboids_global_pig.png` and
+`bike_cuboids_points.png` (`docs/make_cuboids_demo.py`).
+
+## 14. Normals + recursive cuboids on a single photo (`cuboid_normals.py`)
+
+**The idea.** The two cues fail in complementary ways (§§11–12):
+- normals give a smooth part's shape very accurately, but cannot place separate parts;
+- cuboids place every segment, but give each one a solid box's surface.
+
+So each superpixel takes its **shape** from the normals and its **place** from the
+cuboids:
+- normals are integrated inside each segment only, giving each segment a log-depth
+  field up to one offset. This is the same single unknown per segment as a cuboid's
+  scale;
+- the offsets are solved jointly from the cuboid priors (the segment's surface at its
+  global-solve cuboid's front depth; seed segments weighted ×10) and robust
+  boundary continuity (Cauchy IRLS, σ = 0.01, so jumps can be cut).
+
+**Normal sources.** No learned normal estimator is reachable here (Hugging Face and
+GitHub return 403, and no PyTorch). So the sources are:
+- exact normals;
+- exact + 10° noise, about a learned estimator's accuracy;
+- image only: the planar-patch orientation for `box.JPG` (vanishing-point axes) and
+  silhouette normals for the pig.
+
+**Per-pixel depth error, median / ≤3 %**, with untuned default weights
+(`python cuboid_normals.py --eval-dir <segeval>`):
+
+| | box.JPG | synthetic pig |
+|---|---|---|
+| Recursive cuboids, global solve (no normals) | 4.8 % / 35 % | 2.4 % / 61 % |
+| Exact normals alone (whole image, ground-anchored) | **0.36 % / 100 %** | 3.9 % / 40 % |
+| Exact normals + cuboids | 4.1 % / 39 % | 2.0 % / 62 % |
+| 10°-noisy normals alone | 0.76 % / 95 % | 3.2 % / 46 % |
+| 10°-noisy normals + cuboids | 4.3 % / 39 % | 2.0 % / 63 % |
+| Image-only normals alone | 2.3 % / 56 % | 8.1 % / 38 % |
+| **Image-only normals + cuboids** | 4.1 % / 41 % | **2.0 % / 66 %** |
+| `lift3d` whole-object model (reference) | 0.5 % / 100 % | 2.0 % / 68 % |
+
+The pig ground truth here uses bisection-refined surface hits (§12b), so its
+cuboid number (2.38 %) differs slightly from §11 (2.35 %).
+
+**Reading the results.**
+- **Pig (several parts, one occluding another): the combination is the best
+  segment-based result.**
+  - Every normal source reaches 2.0 %: better than the cuboids (2.4 %) and much
+    better than the normals alone (3.2–8.1 %).
+  - It ties `lift3d`'s whole-object model.
+  - Even the crude image-only silhouette normals work, because the cuboids supply
+    exactly what the normals lack: where each part sits.
+- **Box (one continuous part): normals alone win** (0.36 % exact, 2.3 % image-only),
+  and the combination (4.1 %) inherits the cuboids' wrong top face.
+  - This is an ambiguity, not a bug. When two neighbouring cuboid priors disagree by
+    some percent, that looks exactly like a depth jump of that size, so the robust step
+    cuts the link (the unit test shows this on a two-segment plane).
+  - Weighting the cuboid priors lower (0.1 instead of 1) fixes the box but breaks the
+    pig. No single setting suits both (sweep below), and choosing per object would mean
+    tuning on the test data.
+- **Sensitivity sweep** (not used for the table above):
+
+| Setting | box exact / image | pig exact / image |
+|---|---|---|
+| w_box 1, σ 0.01 (default) | 4.1 / 4.1 % | 2.0 / 2.0 % |
+| w_box 0.1, σ 0.01 | 4.3 / 3.4 % | 3.5 / 2.1 % |
+| w_box 0.02, σ 0.03 | 1.9 / 5.8 % | 4.1 / 2.8 % |
+| Two-stage (parts from robust links, one cuboid offset per part), σ 0.03 | 1.1–1.5 / 2.1–4.7 % | 3.7 / 1.9–2.4 % |
+
+- **Superpixels on image + normal map** (meant to put segment boundaries on occlusion
+  contours) made the cuboids themselves worse: box 5.3–6.1 %, pig 3.6–4.2 %.
+
+**What would resolve the ambiguity:** an occlusion cue that does not depend on the
+cuboids, e.g. image edges whose sides have different normals, or a learned occlusion or
+depth-edge detector. With that, a one-part object would get the normals-alone result and
+a multi-part object the combined one. Results come from two test objects only.
+
+Image: `docs/segments/cuboid_normals.png` (`docs/make_cuboid_normals_demo.py`).

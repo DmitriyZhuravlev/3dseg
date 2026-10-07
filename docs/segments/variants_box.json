@@ -1,0 +1,90 @@
+{
+ "original recursive boxes (greedy propagation)": {
+  "median_rel": 0.035854341275494916,
+  "mean_rel": 0.04995654311380954,
+  "within_1pct": 0.17927184010509525,
+  "within_3pct": 0.4563354289825154,
+  "coverage": 0.9999765417907996,
+  "solved": "104/104",
+  "seconds": 111.6
+ },
+ "global: contact constraints only": {
+  "median_rel": 0.0448019572782674,
+  "mean_rel": 0.06105465410692788,
+  "within_1pct": 0.14011697918458627,
+  "within_3pct": 0.3586788233270256,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 20.6
+ },
+ "global: continuity constraints only": {
+  "median_rel": 0.04844262141975465,
+  "mean_rel": 0.06476561585385729,
+  "within_1pct": 0.09894750011729196,
+  "within_3pct": 0.34878720110098055,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 10.2
+ },
+ "global: contact + continuity": {
+  "median_rel": 0.047710505896886274,
+  "mean_rel": 0.06455403921930747,
+  "within_1pct": 0.09959651564674789,
+  "within_3pct": 0.3544015764039848,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 22.1
+ },
+ "global: contact + continuity, no robust loss": {
+  "median_rel": 0.049012082497947036,
+  "mean_rel": 0.06453612597941705,
+  "within_1pct": 0.10210656365825814,
+  "within_3pct": 0.3430868116916629,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 21.4
+ },
+ "global: contact + continuity, no main-box bounds": {
+  "median_rel": 0.04272132659556628,
+  "mean_rel": 0.05273232477500733,
+  "within_1pct": 0.16989349889745556,
+  "within_3pct": 0.3443144675726819,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 20.8
+ },
+ "global: contact + continuity, silhouette-only main box": {
+  "median_rel": 0.05849788582377034,
+  "mean_rel": 0.07157624105063526,
+  "within_1pct": 0.09341131945639085,
+  "within_3pct": 0.2815398088922947,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 19.8
+ },
+ "global: contact + continuity, smaller segments (100 px)": {
+  "median_rel": 0.0530194850221716,
+  "mean_rel": 0.06506892066817035,
+  "within_1pct": 0.10215597300919287,
+  "within_3pct": 0.324336397620671,
+  "coverage": 0.9977480119167703,
+  "solved": "225/225",
+  "seconds": 58.6
+ },
+ "global: contact + continuity + whole-object prior": {
+  "median_rel": 0.03772125157671103,
+  "mean_rel": 0.05029738202416355,
+  "within_1pct": 0.20090549395555415,
+  "within_3pct": 0.44892325977824,
+  "coverage": 0.9999921805969332,
+  "solved": "104/104",
+  "seconds": 20.9
+ },
+ "lift3d whole-object box model (reference)": {
+  "median_rel": 0.004902157602821489,
+  "mean_rel": 0.007457072842742082,
+  "within_1pct": 0.8652397813931847,
+  "within_3pct": 1.0,
+  "coverage": 0.9915237670756214
+ }
+}

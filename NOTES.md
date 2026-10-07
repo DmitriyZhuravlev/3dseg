@@ -409,3 +409,33 @@ Limits: in a tight turn (radius ~1 m for a 1.6 m box) the rotation adds flow and
 heading error grows to 25-30 deg ("start", last frames); a static object gives no flow
 (falls back to interpolation between moving frames). Not yet measured on bike.mp4,
 which is not in the repository: `python video_demos.py bike --video bike.mp4` now uses it.
+
+### Closed-form footprint (article's formula)
+
+`video3d.footprint_closed_form` implements the construction from the chapter's section
+"Lifting 2D Object Detection to 3D": the silhouette's 2D box becomes the ground segment
+AB with side rays AR and BT; a ray from B along the heading meets AR in E (l = |EB|),
+C = ((l - a) A + a B) / l on AB, K = A + (a/l)(E - A) on AR, D on BT perpendicular to KC
+through C; |CD| against the expected side b is the fitting error. Both assignments
+(KC = length or width) and both heading signs are tried. As in the article, a fit is
+accepted only below a small error (`max_fit_err` = 20 % of b), otherwise the ground-contact
+footprint is used. Option `initial_poses(..., footprint="closed", dims=(L, W))`; without
+dims the median size from the contacts is used.
+
+Footprint centre error with the exact heading (median, m):
+
+| trajectory | closed form | ground contacts | closed form fits |
+|---|---|---|---|
+| arc | 0.087 | 0.107 | 93 % |
+| start | 0.041 | 0.077 | 52 % |
+| s-curve | 0.058 | 0.080 | 93 % |
+
+With the optical-flow heading (2.6-4.7 deg median error) the advantage is gone: position
+error 0.19 / 0.07 / 0.17 m vs 0.21 / 0.09 / 0.13 m, held-out IoU 0.903 / 0.863 / 0.846 vs
+0.905 / 0.864 / 0.863. The construction rotates the rectangle about the touch points, so
+a heading error moves the centre more than it moves the contact extents; it also
+degenerates near side-on views (l close to a) and assumes the box's left/right image
+extremes are bottom corners. The default therefore stays `footprint="contacts"`. Knowing
+the true size does not change this (`flow_closed_true_dims`). The closed form becomes
+useful once the heading is refined (after pose refinement, or with tracking) or for
+the type-size step, where its fitting error ranks object types.

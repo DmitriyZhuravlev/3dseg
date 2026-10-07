@@ -239,15 +239,83 @@ def footprint_centre(cam, mask, yaw, min_width=0.3):
     return centre, (uhi - ulo, width)
 
 
-def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None):
+def _line_hit(p, d, q, e):
+    """Parameters (s, r) with p + s d = q + r e (2D lines), or None if parallel."""
+    M = np.column_stack([d, -e])
+    if abs(np.linalg.det(M)) < 1e-9:
+        return None
+    return np.linalg.solve(M, q - p)
+
+
+def footprint_closed_form(cam, mask, yaw, dims, side_px=20):
+    """The article's closed-form footprint (SpringerLifting/author/moving.tex, "Lifting
+    2D Object Detection to 3D") from the 2D box of the silhouette, heading and size.
+
+    In the bird's-eye view the 2D box's bottom edge is the ground segment AB and its
+    left/right sides are the rays AR, BT. The footprint rectangle touches AB in C, AR in
+    K and BT in D. A ray from B along the heading meets AR in E, l = |EB|; KC || EB with
+    |KC| = a, so from the similar triangles KAC ~ EAB
+
+        C = ((l - a) A + a B) / l,     K = A + (a / l) (E - A),
+
+    and D is where the perpendicular to KC through C meets BT. |CD| is the computed
+    second side; its difference from the expected b is the fitting error. KC can be the
+    length or the width of the object, so both are tried (and both heading signs).
+    dims = (length, width). Returns (centre_xy, error, (|KC|, |CD|), b) for the best
+    configuration plus the expected b, or None if the rectangle cannot be fitted
+    (error = infinity).
+    """
+    ys, xs = np.nonzero(mask)
+    if len(xs) < 50:
+        return None
+    x0, x1, yb = xs.min(), xs.max() + 1, ys.max() + 1
+    img = np.array([[x0, yb], [x1, yb], [x0, yb - side_px], [x1, yb - side_px]], float)
+    if not _ground_rays_ok(cam, img).all():
+        return None
+    A, B, Ru, Tu = cam.backproject_to_plane(img, 0.0)[:, :2]
+    dL, dR = Ru - A, Tu - B                              # left and right sides, away from the camera
+    L, W = dims
+    h = np.array([math.cos(yaw), math.sin(yaw)])
+    best = None
+    for a, b, axis in ((L, W, h), (W, L, np.array([-h[1], h[0]]))):
+        for sgn in (1.0, -1.0):
+            u = sgn * axis
+            hit = _line_hit(B, u, A, dL)                 # E = B + l u on AR
+            if hit is None or hit[0] <= a or hit[1] < 0:
+                continue
+            l = hit[0]
+            E = B + l * u
+            C = ((l - a) * A + a * B) / l
+            K = A + (a / l) * (E - A)
+            p = np.array([-u[1], u[0]])
+            if p @ (dL + dR) < 0:
+                p = -p                                   # the far side of KC
+            hit = _line_hit(C, p, B, dR)                 # D = C + q p on BT
+            if hit is None or hit[0] <= 0 or hit[1] < 0:
+                continue
+            D = C + hit[0] * p
+            err = abs(hit[0] - b)
+            if best is None or err < best[1]:
+                best = ((K + D) / 2, err, (a, hit[0]), b)
+    return best
+
+
+def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None, dims=None, footprint="contacts", max_fit_err=0.2):
     """Ground track, heading and lean for every frame.
 
     Without frames: track from the silhouettes' bottom-centre and heading from its
     direction of travel. With frames: heading from the dense optical flow
-    (flow_headings) and position from the footprint centre for that heading
-    (footprint_centre), so the track is the object's centre rather than its nearest
-    point, and the heading is defined from the first frame on, for slow objects too.
-    Lean always comes from the turn of the smoothed track.
+    (flow_headings) and position from the footprint centre for that heading, so the track is the object's centre rather than its nearest point, and the heading
+    is defined from the first frame on, for slow objects too. The footprint comes from
+    the ground contacts (footprint_centre, default) or, with footprint="closed", from
+    the article's closed form (footprint_closed_form, needs dims = (length, width);
+    without dims they are the median size measured by footprint_centre). The closed
+    form is more accurate with an exact heading but more sensitive to heading error,
+    so with flow headings it is not better (bench_flow_init.py, NOTES section 8). As in the article, a closed-form fit
+    is accepted only if its error is small (here below max_fit_err of the expected
+    second side); other frames, mostly near side-on views where the construction
+    degenerates, fall back to footprint_centre. Lean always comes from the turn of the smoothed
+    track.
     """
     T = len(masks)
     tt = np.arange(T)
@@ -262,9 +330,16 @@ def initial_poses(cam, masks, fps, step=1, smooth_s=0.25, frames=None):
             flow_yaw = gaussian_filter1d(np.interp(tt, tt[good], uw), max(1.0, sig / 2))
     pts = np.full((T, 2), np.nan)
     ground = np.full((T, 3), np.nan)
+    if flow_yaw is not None:
+        contacts = [footprint_centre(cam, m, flow_yaw[t]) for t, m in enumerate(masks)]
+        if footprint == "closed" and dims is None:
+            sizes = np.array([c[1] for c in contacts if c is not None])
+            dims = tuple(np.median(sizes, 0)) if len(sizes) else None
     for t, m in enumerate(masks):
         if flow_yaw is not None:
-            fp = footprint_centre(cam, m, flow_yaw[t])
+            fp = footprint_closed_form(cam, m, flow_yaw[t], dims) if footprint == "closed" and dims else None
+            if fp is None or fp[1] > max_fit_err * fp[3]:
+                fp = contacts[t]
             if fp is not None:
                 ground[t, :2] = fp[0]
             continue

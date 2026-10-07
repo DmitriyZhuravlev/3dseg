@@ -134,11 +134,25 @@ def main(out="docs/video3d"):
         truth = trajectory(name)
         frames, masks = render(cam, truth, gimg)
         track, _ = v3.initial_poses(cam, masks, FPS)
-        flow, _ = v3.initial_poses(cam, masks, FPS, frames=frames)
-        r_track, c_track = evaluate(cam, masks, truth, track)
-        r_flow, c_flow = evaluate(cam, masks, truth, flow)
-        results[name] = dict(track=r_track, flow=r_flow)
-        curves[name] = (c_track, c_flow, frames[len(frames) // 2], masks[len(frames) // 2])
+        variants = dict(track=track,
+                        flow_contacts=v3.initial_poses(cam, masks, FPS, frames=frames)[0],
+                        flow_closed=v3.initial_poses(cam, masks, FPS, frames=frames, footprint="closed")[0],
+                        flow_closed_true_dims=v3.initial_poses(cam, masks, FPS, frames=frames, footprint="closed",
+                                                               dims=DIMS[:2])[0])
+        results[name], errs = {}, {}
+        for k, est in variants.items():
+            results[name][k], errs[k] = evaluate(cam, masks, truth, est)
+        yaw = variants["flow_closed"][:, 2]
+        fits = [v3.footprint_closed_form(cam, m, yaw[t], DIMS[:2]) for t, m in enumerate(masks)]
+        results[name]["closed_form_fit_rate"] = float(np.mean([f is not None for f in fits]))
+        results[name]["closed_form_err_m_median"] = float(np.median([f[1] for f in fits if f is not None]))
+        # footprint accuracy alone, with the exact heading: closed form vs ground contacts
+        cf = [v3.footprint_closed_form(cam, m, truth[t, 2], DIMS[:2]) for t, m in enumerate(masks)]
+        ct = [v3.footprint_centre(cam, m, truth[t, 2]) for t, m in enumerate(masks)]
+        results[name]["true_heading_pos_err_m_median"] = dict(
+            closed_form=float(np.median([np.linalg.norm(f[0] - truth[t, :2]) for t, f in enumerate(cf) if f is not None])),
+            contacts=float(np.median([np.linalg.norm(f[0] - truth[t, :2]) for t, f in enumerate(ct) if f is not None])))
+        curves[name] = (errs, frames[len(frames) // 2], masks[len(frames) // 2])
         print(name, json.dumps(results[name], indent=1))
     os.makedirs(out, exist_ok=True)
     json.dump(results, open(os.path.join(out, "flow_init_benchmark.json"), "w"), indent=1)
@@ -150,22 +164,20 @@ def plot(curves, results, path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(2, 3, figsize=(15, 7.5))
-    for j, (name, (ct, cf, frame, mask)) in enumerate(curves.items()):
+    for j, (name, (errs, frame, mask)) in enumerate(curves.items()):
         a = ax[0, j]
         a.imshow(frame, cmap="gray")
         a.contour(mask, [0.5], colors="r", linewidths=0.8)
         a.set_title(f"'{name}' (middle frame)")
         a.axis("off")
         a = ax[1, j]
-        a.plot(np.degrees(ct), label="track heading (before)")
-        a.plot(np.degrees(cf), label="optical-flow heading (new)")
-        rt, rf = results[name]["track"], results[name]["flow"]
-        a.set_title(f"held-out IoU {rt['held_out_iou']:.2f} -> {rf['held_out_iou']:.2f}, "
-                    f"volume IoU {rt['volume_iou']:.2f} -> {rf['volume_iou']:.2f}", fontsize=9)
-        a.set_xlabel("frame")
-        a.set_ylabel("heading error, deg")
-        a.set_ylim(0, 45)
-        a.legend(fontsize=8)
+        r = results[name]
+        for k in ("track", "flow_contacts", "flow_closed", "flow_closed_true_dims"):
+            a.bar(k.replace("flow_", "").replace("_", "\n"), r[k]["held_out_iou"])
+            a.text(k.replace("flow_", "").replace("_", "\n"), r[k]["held_out_iou"] + 0.005,
+                   f"{r[k]['held_out_iou']:.3f}\n{r[k]['pos_err_m_median'] * 100:.0f} cm", ha="center", fontsize=8)
+        a.set_title("held-out silhouette IoU (label: IoU, median position error)", fontsize=9)
+        a.set_ylim(0.6, 1.0)
     fig.tight_layout()
     fig.savefig(path, dpi=90)
 

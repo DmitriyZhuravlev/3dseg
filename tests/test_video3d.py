@@ -127,3 +127,14 @@ def test_flow_heading_and_footprint_beat_the_track_on_an_arc():
     assert err(flow) < math.radians(4) and err(flow) < err(track)
     # the footprint centre is the box centre, not its nearest point
     assert np.median(np.linalg.norm(flow[:, :2] - truth[:, :2], axis=1)) < 0.3
+
+
+def test_closed_form_footprint_finds_the_box_centre_given_heading_and_size():
+    import bench_flow_init as b
+    cam = b.camera()
+    truth = b.trajectory("arc")
+    masks = b.render(cam, truth, b.ground_image(cam))[1]
+    fits = [v3.footprint_closed_form(cam, masks[t], truth[t, 2], b.DIMS[:2]) for t in range(0, len(truth), 5)]
+    errs = [np.linalg.norm(f[0] - truth[5 * i, :2]) for i, f in enumerate(fits) if f is not None]
+    assert len(errs) >= 0.8 * len(fits)
+    assert np.median(errs) < 0.15

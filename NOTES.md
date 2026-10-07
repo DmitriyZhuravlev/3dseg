@@ -478,3 +478,78 @@ the full pipeline's refinement.
   shoulders are at camera height, 1.32 m, where back-projection blows up flow noise).
 - Horse.mp4 is not in data/; the method would need the panning camera's motion removed
   first (the article assumes a fixed camera).
+
+## 9. 3D part segmentation from motion (parts3d.py)
+
+Goal: split the object carved by `video3d.py` into parts that move rigidly relative to
+each other (wheels, steering, rider), from the same single fixed-camera video, without
+training. The 3D counterpart of the SpringerLifting chapter's flow clustering: there 2D
+flow is clustered into objects in the image; here flow residuals against the carved 3D
+model are explained by a set of rigid part motions, and every label sits on a voxel.
+
+Method (`parts3d.segment_parts`):
+1. Visible surface voxels per frame pair (coarse z-buffer); observed dense flow at their
+   projections (Farneback with a 7 px window: the usual 15 px window averaged a small
+   wheel's rotation away, measured against true motions).
+2. Candidate motions: per frame pair, a 6-DoF rigid motion in the object frame for each of
+   40 compact supervoxels (robust Gauss-Newton, ridge prior towards no relative motion),
+   plus the whole object's motion refitted to the flow (this absorbs the error of the
+   silhouette-based poses; without it the pose error looked like part motion everywhere
+   on the real bike).
+3. Labelling: per voxel the mean robust flow residual under each candidate; minimise data
+   + lam x Potts on the 26-neighbour voxel graph + beta x N x #parts (ICM, then greedy part
+   removal). Refit each part's motions from its voxels; repeat. Interior voxels take the
+   nearest surface label, so the full volume is labelled.
+
+What did not work (kept for the record): merging supervoxels by pairwise
+cross-explanation of their motions. Motions fitted to small, nearly flat patches are
+ambiguous, so same-part and different-part pairs overlapped (median 0.97 vs 1.72 px).
+
+### Synthetic benchmark (`bench_parts3d.py`, `docs/parts3d/bench_parts3d*`)
+
+Articulated "motorcycle": box body, two rolling wheels, swaying rider (lean 0.15 rad,
+pitch 0.10 rad), textured parts, fixed camera, 90 frames, true body poses. The visual hull
+of this concave shape is fat: only 25 % of the carved surface voxels are within 3 cm of the
+true object, so labels are scored where they matter, in the images: 3D labels projected
+into the held-out (odd) frames vs the renderer's part image, mIoU after one global label
+matching. Parameters were tuned on "arc"; "s" is a held-out video.
+
+| method | arc mIoU / ARI | s mIoU / ARI |
+|---|---|---|
+| rigid (one part) | 0.07 / 0.00 | 0.07 / 0.00 |
+| 2D flow k-means per frame (oracle K = 4, matched per frame) | 0.26 / 0.15 | 0.29 / 0.16 |
+| 3D flow-trajectory k-means (oracle K = 4) | 0.25 / 0.15 | 0.30 / 0.17 |
+| ours, no smoothness | 0.51 / 0.43 | **0.38 / 0.27** |
+| ours | **0.51 / 0.43** | 0.28 / 0.14 |
+
+- arc: both wheels found (number of parts found automatically: 3); the rider's sway (about
+  1 px per frame) is merged with the body.
+- s (held out): the full method falls below the baselines. Each wheel is cut into
+  wedges: on the fast-spinning wheels the measured flow is not one rigid rotation, so
+  different wedges prefer different (wrong) motions and the smoothness then propagates
+  them. Without smoothness it still beats the baselines. Not solved.
+
+### bike.mp4 (`docs/bike_parts3d.py`, `docs/parts3d/bike_parts3d_*`)
+
+Carved model and poses from the full pipeline (re-sampled to 4 cm), flow of every 4th frame
+pair. No ground truth, so the check is predictive: part motions are fitted on half of the
+surface voxels (12 cm blocks) and predict the flow of the other half, on frame pairs not
+used for the segmentation (`bike_parts3d_heldout_curve.json`):
+
+| parts | 1 | 5 | 9 | 10 | 14 | 19 |
+|---|---|---|---|---|---|---|
+| held-out flow error, px | 0.494 | 0.476 | 0.451 | 0.454 | 0.447 | 0.448 |
+
+- With the synthetic defaults (beta 0.05) the bike stays one part: after the whole-body
+  flow fit, relative motions are only tenths of a pixel at 60 fps.
+- With a small label cost the parts lower the held-out error by up to 9.5 %, levelling off
+  at about 9 parts. The 5-part result separates the front wheel and fork (steering + wheel
+  rotation) from the frame, plus a strip at the tyre contact; 9 parts add pieces of the
+  rear wheel region and the rider's arm/handlebar. The rear wheel is not cleanly
+  separated (dark tyre, weak flow), the rider's body not at all.
+- Labels for the 5-part result: `docs/parts3d/bike_parts3d_labels.npz`.
+
+Status: a working, measurable method; wheels are found on clean synthetic data and the
+steering assembly on the real bike, with a held-out flow-prediction gain. It is not
+robust yet (fails on the held-out synthetic video) and the beta used on the bike was
+chosen by held-out error, not fixed in advance.

@@ -1,0 +1,142 @@
+{
+ "arc": {
+  "rigid (one part)": {
+   "miou": 0.07338704045347937,
+   "iou_per_part": {
+    "body": 0.0,
+    "front wheel": 0.0,
+    "rear wheel": 0.0,
+    "rider": 0.294
+   },
+   "ari": 0.0,
+   "parts": 1
+  },
+  "2D flow k-means per frame (oracle K=4, per-frame matching)": {
+   "miou": 0.25795432065184926,
+   "iou_per_part": {
+    "body": 0.103,
+    "front wheel": 0.25,
+    "rear wheel": 0.266,
+    "rider": 0.413
+   },
+   "ari": 0.14907398156451818,
+   "parts": 4
+  },
+  "3D trajectory k-means (oracle K=4)": {
+   "miou": 0.2533001429049998,
+   "iou_per_part": {
+    "body": 0.114,
+    "front wheel": 0.258,
+    "rear wheel": 0.199,
+    "rider": 0.442
+   },
+   "ari": 0.15388597552089942,
+   "parts": 4
+  },
+  "ours, no smoothness": {
+   "miou": 0.51322297653278,
+   "iou_per_part": {
+    "body": 0.0,
+    "front wheel": 0.791,
+    "rear wheel": 0.769,
+    "rider": 0.492
+   },
+   "ari": 0.43044560698980133,
+   "parts": 3
+  },
+  "ours": {
+   "miou": 0.5148407795414168,
+   "iou_per_part": {
+    "body": 0.0,
+    "front wheel": 0.798,
+    "rear wheel": 0.772,
+    "rider": 0.489
+   },
+   "ari": 0.42846078530076137,
+   "parts": 3
+  },
+  "ours, on-object surface voxels": {
+   "miou": 0.4143175352882999,
+   "iou_per_part": {
+    "body": 0.0,
+    "front wheel": 0.591,
+    "rear wheel": 0.529,
+    "rider": 0.538
+   },
+   "ari": 0.25456864599306045,
+   "parts": 3
+  },
+  "on_object_fraction_of_carved_surface": 0.24652512601191384,
+  "seconds": 49
+ },
+ "s": {
+  "rigid (one part)": {
+   "miou": 0.0728765990374557,
+   "iou_per_part": {
+    "body": 0.0,
+    "front wheel": 0.0,
+    "rear wheel": 0.0,
+    "rider": 0.292
+   },
+   "ari": 8.553207799654119e-17,
+   "parts": 1
+  },
+  "2D flow k-means per frame (oracle K=4, per-frame matching)": {
+   "miou": 0.28881594416268774,
+   "iou_per_part": {
+    "body": 0.107,
+    "front wheel": 0.318,
+    "rear wheel": 0.32,
+    "rider": 0.41
+   },
+   "ari": 0.15623389209092306,
+   "parts": 4
+  },
+  "3D trajectory k-means (oracle K=4)": {
+   "miou": 0.3033650438733032,
+   "iou_per_part": {
+    "body": 0.179,
+    "front wheel": 0.259,
+    "rear wheel": 0.308,
+    "rider": 0.468
+   },
+   "ari": 0.16765549450787542,
+   "parts": 4
+  },
+  "ours, no smoothness": {
+   "miou": 0.3824111791802232,
+   "iou_per_part": {
+    "body": 0.057,
+    "front wheel": 0.713,
+    "rear wheel": 0.326,
+    "rider": 0.434
+   },
+   "ari": 0.27117665511529043,
+   "parts": 4
+  },
+  "ours": {
+   "miou": 0.2757983929882154,
+   "iou_per_part": {
+    "body": 0.059,
+    "front wheel": 0.45,
+    "rear wheel": 0.211,
+    "rider": 0.384
+   },
+   "ari": 0.1369630453844233,
+   "parts": 4
+  },
+  "ours, on-object surface voxels": {
+   "miou": 0.34530062130770134,
+   "iou_per_part": {
+    "body": 0.201,
+    "front wheel": 0.481,
+    "rear wheel": 0.325,
+    "rider": 0.375
+   },
+   "ari": 0.1604747175826484,
+   "parts": 4
+  },
+  "on_object_fraction_of_carved_surface": 0.2453817733990148,
+  "seconds": 53
+ }
+}

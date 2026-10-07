@@ -1,0 +1,40 @@
+{
+ "held-out flow EPE (px) by number of parts, bike.mp4, gap 1, every 4th frame pair": [
+  {
+   "parts": 1,
+   "beta": 0.05,
+   "lam": 0.1,
+   "epe": 0.4937
+  },
+  {
+   "parts": 5,
+   "beta": 0.002,
+   "lam": 0.1,
+   "epe": 0.4757
+  },
+  {
+   "parts": 9,
+   "beta": 0.003,
+   "lam": 0.01,
+   "epe": 0.4514
+  },
+  {
+   "parts": 10,
+   "beta": 0.002,
+   "lam": 0.03,
+   "epe": 0.4541
+  },
+  {
+   "parts": 14,
+   "beta": 0.002,
+   "lam": 0.01,
+   "epe": 0.4468
+  },
+  {
+   "parts": 19,
+   "beta": 0.001,
+   "lam": 0.03,
+   "epe": 0.4479
+  }
+ ]
+}

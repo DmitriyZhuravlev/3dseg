@@ -807,3 +807,32 @@ Status: a working, measurable method; wheels are found on clean synthetic data a
 steering assembly on the real bike, with a held-out flow-prediction gain. It is not
 robust yet (fails on the held-out synthetic video) and the beta used on the bike was
 chosen by held-out error, not fixed in advance.
+
+## 16. Recursive cuboids fused per motion part (`video_cuboids_parts.py`)
+
+Section 13 fuses each frame's recursive cuboids (global solve + triangulated points) by
+voxel voting in the motorcycle's frame, i.e. as one rigid body. Section 15 found the front
+assembly (front wheel + fork, parts 1, 3, 4) moving relative to the frame. Improvements
+tried on the same 74 fusion frames, evaluated on held-out odd frames
+(`docs/parts3d/bike_cuboids_parts.{json,png}`; poses and carving from the flow-initialised
+run, so absolute numbers differ slightly from section 13):
+
+| model | held-out IoU | with steering fit | point distance (median) | within 2 cm |
+|---|---|---|---|---|
+| cuboids, one tau (section 13 method) | 0.792 | 0.794 | 6.5 cm | 19 % |
+| + per-part tau (body 0.2, front 0.3) | **0.800** | 0.802 | 5.7 cm | 21 % |
+| + articulated fusion (steering undone per frame) | 0.800 | 0.801 | **5.5 cm** | 20 % |
+| + intersected with carving | 0.834 | 0.837 | 3.1 cm | - |
+| carving (reference) | 0.848 | 0.851 | 2.8 cm | 35 % |
+
+- Per-part thresholds help the cuboids (+0.008 IoU, 6.5 -> 5.7 cm): the front assembly needs
+  a stricter vote than the body.
+- Articulated fusion (steering angle per fusion frame from its silhouette, front votes
+  rotated back about a vertical axis) adds little (5.7 -> 5.5 cm, same IoU). The fitted
+  angles are small (median 6 deg), so on this video the steering barely moves the front.
+  Fitting a steering angle per held-out frame also adds only +0.002-0.003 IoU to every
+  model.
+- The cuboids still overfill around the base and the rear (red in the picture); bounded by
+  the carving they come within 0.014 IoU / 0.3 cm of carving alone but do not beat it, so
+  they also remove some true volume. Silhouette carving with many frames remains the best
+  shape model here; the cuboids' value is single-frame reconstruction (section 10).

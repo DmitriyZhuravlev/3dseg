@@ -11,3 +11,4 @@ flowiz
 moderngl>=5.8           # thin, modern OpenGL 3.3+ wrapper; also gives headless EGL contexts
 glfw>=2.5               # window + mouse/keyboard input for the interactive viewer
 Pillow                  # texture loading and screenshot saving
+open3d                  # optional: video_normals.py (Poisson surface, raycasting)

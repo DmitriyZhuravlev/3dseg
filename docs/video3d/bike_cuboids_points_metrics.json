@@ -1,0 +1,53 @@
+{
+ "frames_fused": 74,
+ "fit_points": 457,
+ "held_points": 472,
+ "mean_points_per_frame": 23.243243243243242,
+ "recursive cuboids, greedy": {
+  "tau": 0.2,
+  "held_out_iou": 0.7529966629195273,
+  "held_out_point_distance_median_cm": 5.8827056884765625,
+  "held_out_points_within_2cm": 0.1716101694915254,
+  "held_out_points_within_5cm": 0.4258474576271186,
+  "voxels": 101978
+ },
+ "recursive cuboids, global": {
+  "tau": 0.2,
+  "held_out_iou": 0.7818491162105111,
+  "held_out_point_distance_median_cm": 5.848865985870361,
+  "held_out_points_within_2cm": 0.17796610169491525,
+  "held_out_points_within_5cm": 0.4470338983050847,
+  "voxels": 104648
+ },
+ "recursive cuboids, global + points": {
+  "tau": 0.3,
+  "held_out_iou": 0.8148495460860838,
+  "held_out_point_distance_median_cm": 4.681407451629639,
+  "held_out_points_within_2cm": 0.211864406779661,
+  "held_out_points_within_5cm": 0.5338983050847458,
+  "voxels": 62697
+ },
+ "recursive cuboids, global + points + free space": {
+  "removed": 12495,
+  "held_out_iou": 0.8126760136814715,
+  "held_out_point_distance_median_cm": 3.1005024909973145,
+  "held_out_points_within_2cm": 0.3347457627118644,
+  "held_out_points_within_5cm": 0.690677966101695,
+  "voxels": 54283
+ },
+ "carving (reference)": {
+  "held_out_iou": 0.8482527452025849,
+  "held_out_point_distance_median_cm": 2.7182600498199463,
+  "held_out_points_within_2cm": 0.3728813559322034,
+  "held_out_points_within_5cm": 0.7627118644067796,
+  "voxels": 68614
+ },
+ "carving + free space (reference)": {
+  "held_out_iou": 0.8449269844045222,
+  "held_out_point_distance_median_cm": 2.3169445991516113,
+  "held_out_points_within_2cm": 0.4258474576271186,
+  "held_out_points_within_5cm": 0.8516949152542372,
+  "voxels": 60193
+ },
+ "seconds": 725
+}
